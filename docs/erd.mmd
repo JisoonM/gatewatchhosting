@@ -1,0 +1,442 @@
+erDiagram
+    %% =========================
+    %% Identity and Authentication
+    %% =========================
+    users {
+        int id PK
+        varchar student_id UK
+        varchar name
+        varchar email UK
+        varchar course
+        varchar google_id UK
+        varchar password
+        enum role
+        enum status
+        datetime locked_until
+        int failed_attempts
+        datetime last_login
+        timestamp created_at
+        timestamp updated_at
+        varchar profile_picture
+        datetime profile_picture_uploaded_at
+        varchar rfid_uid UK
+        timestamp rfid_registered_at
+        int violation_count
+        int active_violations_count
+        int gate_mark_count
+        tinyint face_registered
+        timestamp face_registered_at
+        datetime deleted_at
+    }
+
+    auth_providers {
+        int id PK
+        varchar provider_name UK
+        tinyint is_enabled
+        tinyint is_primary
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    user_auth_methods {
+        int id PK
+        int user_id FK
+        int provider_id FK
+        varchar provider_user_id
+        tinyint is_primary_method
+        timestamp first_used_at
+        timestamp last_used_at
+        int use_count
+    }
+
+    password_resets {
+        int id PK
+        int user_id FK
+        varchar token UK
+        datetime expires_at
+        tinyint used
+        timestamp created_at
+    }
+
+    student_profiles {
+        int id PK
+        int user_id FK
+        varchar profile_picture
+        datetime profile_picture_uploaded_at
+        int profile_picture_size
+        varchar profile_picture_mime_type
+        text bio
+        varchar phone
+        varchar emergency_contact
+        varchar emergency_phone
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    %% =========================
+    %% RFID Domain
+    %% =========================
+    rfid_cards {
+        int id PK
+        int user_id FK
+        varchar rfid_uid UK
+        timestamp registered_at
+        timestamp unregistered_at
+        tinyint is_active
+        int registered_by FK
+        int unregistered_by FK
+        text notes
+        tinyint is_lost
+        datetime lost_at
+        varchar lost_reason
+        int lost_reported_by FK
+        datetime found_at
+        int found_by FK
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    rfid_status_history {
+        int id PK
+        int rfid_card_id FK
+        int user_id FK
+        varchar status_change
+        timestamp changed_at
+        int changed_by FK
+        text reason
+        text notes
+        varchar ip_address
+    }
+
+    %% =========================
+    %% Face Recognition Domain
+    %% =========================
+    face_descriptors {
+        int id PK
+        int user_id FK
+        text descriptor_data
+        varchar descriptor_iv
+        varchar descriptor_tag
+        varchar label
+        float quality_score
+        int registered_by FK
+        tinyint is_active
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    face_entry_logs {
+        int id PK
+        int user_id FK
+        float confidence_score
+        float match_threshold
+        varchar gate_location
+        int security_guard_id FK
+        enum entry_type
+        varchar snapshot_path
+        timestamp created_at
+    }
+
+    face_registration_log {
+        int id PK
+        int user_id FK
+        enum action
+        int descriptor_count
+        int performed_by FK
+        varchar ip_address
+        text user_agent
+        timestamp created_at
+    }
+
+    %% =========================
+    %% Violations Domain
+    %% =========================
+    violations {
+        int id PK
+        int user_id FK
+        varchar rfid_uid
+        timestamp scanned_at
+        enum violation_type
+        varchar gate_location
+        int security_guard_id FK
+        tinyint email_sent
+        timestamp email_sent_at
+        text notes
+    }
+
+    violation_categories {
+        int id PK
+        varchar name
+        enum type
+        text description
+        varchar default_sanction
+        varchar article_reference
+        tinyint is_active
+        timestamp created_at
+    }
+
+    student_violations {
+        int id PK
+        int user_id FK
+        int category_id FK
+        text description
+        int offense_number
+        enum status
+        varchar reparation_type
+        text reparation_notes
+        datetime reparation_completed_at
+        int resolved_by FK
+        int recorded_by FK
+        varchar school_year
+        enum semester
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    %% =========================
+    %% Guardians and Notifications
+    %% =========================
+    guardians {
+        int id PK
+        varchar email UK
+        varchar first_name
+        varchar last_name
+        varchar phone_number
+        enum relationship
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    student_guardians {
+        int id PK
+        int student_id FK
+        int guardian_id FK
+        tinyint is_primary
+        varchar relationship_notes
+        timestamp created_at
+    }
+
+    notification_settings {
+        int id PK
+        int guardian_id FK
+        tinyint entry_notification
+        tinyint exit_notification
+        tinyint violation_notification
+        tinyint daily_summary
+        timestamp updated_at
+    }
+
+    notification_queue {
+        int id PK
+        int student_id FK
+        int guardian_id FK
+        enum notification_type
+        timestamp scheduled_for
+        timestamp sent_at
+        enum status
+        int retry_count
+        json data
+        timestamp created_at
+    }
+
+    notification_logs {
+        int id PK
+        int student_id FK
+        int guardian_id FK
+        enum notification_type
+        timestamp sent_at
+        enum status
+        text error_message
+    }
+
+    %% =========================
+    %% Audit Domain
+    %% =========================
+    audit_log {
+        int id PK
+        int user_id FK
+        varchar action
+        varchar table_name
+        int record_id
+        text old_values
+        text new_values
+        varchar ip_address
+        text user_agent
+        timestamp created_at
+    }
+
+    audit_logs {
+        int id PK
+        int admin_id FK
+        varchar admin_name
+        varchar action_type
+        varchar target_type
+        int target_id
+        varchar target_name
+        text description
+        json details
+        varchar ip_address
+        text user_agent
+        timestamp created_at
+    }
+
+    auth_audit_log {
+        int id PK
+        int user_id FK
+        int provider_id FK
+        varchar email
+        enum action
+        varchar ip_address
+        text user_agent
+        timestamp created_at
+    }
+
+    %% =========================
+    %% QR and Security Domain
+    %% =========================
+    qr_entry_logs {
+        int id PK
+        int user_id FK
+        varchar student_id
+        enum entry_type
+        datetime scanned_at
+        varchar security_guard
+        timestamp created_at
+    }
+
+    used_qr_tokens {
+        int id PK
+        varchar token_hash UK
+        int user_id FK
+        varchar student_id
+        datetime used_at
+        varchar security_guard
+        timestamp created_at
+    }
+
+    qr_scan_challenges {
+        bigint id PK
+        varchar challenge_id UK
+        char guard_session_hash
+        varchar guard_username
+        enum status
+        datetime expires_at
+        datetime consumed_at
+        int consumed_by_user_id
+        timestamp created_at
+    }
+
+    qr_face_pending {
+        bigint id PK
+        char guard_session_hash
+        varchar guard_username
+        varchar challenge_id
+        char token_hash
+        int user_id
+        varchar student_id
+        enum status
+        varchar reject_reason
+        timestamp created_at
+        datetime expires_at
+        datetime resolved_at
+        int resolved_by_user_id
+    }
+
+    qr_security_events {
+        bigint id PK
+        varchar event_type
+        char guard_session_hash
+        varchar guard_username
+        int user_id
+        varchar student_id
+        varchar challenge_id
+        char token_hash
+        text details_json
+        timestamp created_at
+    }
+
+    %% =========================
+    %% System and Governance
+    %% =========================
+    ip_rate_limits {
+        int id PK
+        varchar identifier UK
+        int attempts
+        int first_attempt
+        int blocked_until
+    }
+
+    system_settings {
+        int id PK
+        varchar setting_key UK
+        text value
+        varchar description
+        timestamp updated_at
+        int updated_by FK
+    }
+
+    schema_migrations {
+        int id PK
+        varchar migration_name UK
+        timestamp applied_at
+        char checksum
+        int execution_time_ms
+        varchar applied_by
+    }
+
+    %% =========================
+    %% Relationships
+    %% =========================
+    users ||--o{ user_auth_methods : uses
+    auth_providers ||--o{ user_auth_methods : provides
+
+    users ||--o{ password_resets : resets
+    users ||--|| student_profiles : has_profile
+
+    users ||--o{ rfid_cards : owns_cards
+    users ||--o{ rfid_cards : registered_by
+    users ||--o{ rfid_cards : unregistered_by
+    users ||--o{ rfid_cards : lost_reported_by
+    users ||--o{ rfid_cards : found_by
+
+    rfid_cards ||--o{ rfid_status_history : history
+    users ||--o{ rfid_status_history : subject
+    users ||--o{ rfid_status_history : changed_by
+
+    users ||--o{ face_descriptors : has_face
+    users ||--o{ face_descriptors : face_registered_by
+
+    users ||--o{ face_entry_logs : face_entries
+    users ||--o{ face_entry_logs : face_guard
+
+    users ||--o{ face_registration_log : face_registrations
+    users ||--o{ face_registration_log : face_performed_by
+
+    users ||--o{ violations : violation_subject
+    users ||--o{ violations : violation_guard
+
+    users ||--o{ student_violations : student_violation_subject
+    violation_categories ||--o{ student_violations : categorized_as
+    users ||--o{ student_violations : resolved_by
+    users ||--o{ student_violations : recorded_by
+
+    users ||--o{ student_guardians : linked_student
+    guardians ||--o{ student_guardians : linked_guardian
+
+    guardians ||--|| notification_settings : has_settings
+
+    users ||--o{ notification_queue : queued_student
+    guardians ||--o{ notification_queue : queued_guardian
+
+    users ||--o{ notification_logs : notified_student
+    guardians ||--o{ notification_logs : notified_guardian
+
+    users ||--o{ audit_log : actor
+    users ||--o{ audit_logs : admin_actor
+    users ||--o{ auth_audit_log : auth_actor
+    auth_providers ||--o{ auth_audit_log : auth_provider
+
+    users ||--o{ qr_entry_logs : qr_entries
+    users ||--o{ used_qr_tokens : used_tokens
+
+    users ||--o{ system_settings : updated_by

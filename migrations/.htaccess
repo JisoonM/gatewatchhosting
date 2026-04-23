@@ -1,0 +1,12 @@
+﻿# Block .env in this directory
+<FilesMatch "^\.env(\..*)?$">
+    Require all denied
+</FilesMatch>
+
+# Block log and backup files
+<FilesMatch "\.(log|bak|sql|sh|old|swp|tmp)$">
+    Require all denied
+</FilesMatch>
+
+# Disable directory listing
+Options -Indexes

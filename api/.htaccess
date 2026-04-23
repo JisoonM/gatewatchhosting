@@ -1,0 +1,21 @@
+# Block .env in this directory
+<FilesMatch "^\.env(\..*)?$">
+    Require all denied
+</FilesMatch>
+
+# Block log and backup files
+<FilesMatch "\.(log|bak|sql|sh|old|swp|tmp)$">
+    Require all denied
+</FilesMatch>
+
+# Disable directory listing
+Options -Indexes
+
+# Allow only expected HTTP methods for API endpoints
+RewriteEngine On
+RewriteCond %{REQUEST_METHOD} !^(GET|POST|OPTIONS)$ [NC]
+RewriteRule ^ - [F,L]
+
+# Block direct access to non-PHP files in this folder
+RewriteCond %{REQUEST_URI} !\.php$ [NC]
+RewriteRule ^ - [F,L]

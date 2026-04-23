@@ -1,0 +1,50 @@
+# Error logs
+error.log
+*.log
+
+# Vendor directory - NOW INCLUDED for plug-and-play XAMPP portability
+# vendor/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Uploaded user files (avatars and profiles)
+assets/images/avatars/*
+assets/images/profiles/*
+assets/profiles/*
+
+# Keep .gitkeep files to preserve directory structure
+!assets/images/avatars/.gitkeep
+!assets/images/profiles/.gitkeep
+!assets/profiles/.gitkeep
+
+# PHP temporary files
+*.cache
+*.tmp
+
+# Database backups
+*.sql.backup
+backup/
+
+# Large binary / media files
+*.exe
+*.mp4
+*.avi
+*.mov
+*.zip
+*.rar
+*.7z

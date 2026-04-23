@@ -1,0 +1,1 @@
+// Student-side profile picture upload was removed.

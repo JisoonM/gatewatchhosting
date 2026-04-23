@@ -1,0 +1,81 @@
+# =========================================================
+# SECURITY: Block all sensitive files from direct web access
+# =========================================================
+
+# Block .env and any variant (critical - was incorrectly named "env" before)
+<FilesMatch "^\.env(\..*)?$">
+    Require all denied
+</FilesMatch>
+
+# Block server-side error and application logs
+<FilesMatch "\.(log|bak|sql|sh|bash|old|swp|orig)$">
+    Require all denied
+</FilesMatch>
+
+# Block composer files
+<FilesMatch "^composer\.(json|lock)$">
+    Require all denied
+</FilesMatch>
+
+# Block raw PHP config and migration files from direct browsing
+<FilesMatch "^(database|migration).*\.sql$">
+    Require all denied
+</FilesMatch>
+
+# Block any backup or temp files
+<FilesMatch "(\.(bak|backup|tmp|temp|old)|~)$">
+    Require all denied
+</FilesMatch>
+
+# Deny access to vendor directory
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^vendor/.*$ - [F,L]
+    RewriteRule ^migrations/.*$ - [F,L]
+    RewriteRule ^scripts/.*$ - [F,L]
+    RewriteRule ^setup/.*\.php$ - [F,L]
+    RewriteRule ^admin/(add_rfid_columns|add_violation_tracking)\.php$ - [F,L]
+    RewriteRule ^(add_google_id_columns|add_verification_system|check_google_column|create_default_profile|migrate_profile_pictures)\.php$ - [F,L]
+</IfModule>
+
+# Disable directory listing globally
+Options -Indexes
+
+# Block direct access to includes directory (PHP files are require_once'd server-side only)
+<IfModule mod_rewrite.c>
+    RewriteRule ^includes/.*$ - [F,L]
+    RewriteRule ^config/.*$ - [F,L]
+</IfModule>
+
+# ============================================================
+# PERFORMANCE: Browser caching for static assets
+# ============================================================
+
+<IfModule mod_expires.c>
+    ExpiresActive On
+
+    # Profile pictures and general images — cache for 7 days
+    # (short enough to reflect updates when a student changes their photo)
+    <FilesMatch "\.(jpg|jpeg|png|gif|webp)$">
+        ExpiresDefault "access plus 7 days"
+        Header set Cache-Control "public, max-age=604800, stale-while-revalidate=86400"
+    </FilesMatch>
+
+    # CSS and JS — cache for 1 day during development
+    # (increase to 30 days when you have asset versioning/fingerprinting)
+    <FilesMatch "\.(css|js)$">
+        ExpiresDefault "access plus 1 day"
+        Header set Cache-Control "public, max-age=86400"
+    </FilesMatch>
+
+    # Fonts — cache for 30 days (they never change)
+    <FilesMatch "\.(woff|woff2|ttf|eot|otf)$">
+        ExpiresDefault "access plus 30 days"
+        Header set Cache-Control "public, max-age=2592000"
+    </FilesMatch>
+</IfModule>
+
+# Enable compression for text-based content
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/css application/javascript application/json text/plain
+</IfModule>

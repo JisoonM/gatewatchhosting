@@ -1,0 +1,435 @@
+/* General form styles */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* Form input enhancements */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+select {
+  @apply bg-white;
+  @apply shadow-sm;
+  @apply ring-1 ring-slate-200;
+  @apply placeholder:text-slate-400;
+  @apply text-base;
+  @apply transition-shadow duration-150;
+}
+
+/* Input states */
+input:focus,
+select:focus {
+  @apply ring-2;
+  @apply ring-sky-200;
+  @apply border-sky-400;
+  @apply outline-none;
+  @apply shadow-md;
+  @apply shadow-sky-50;
+}
+
+/* Error state */
+input:invalid:not(:placeholder-shown),
+select:invalid:not(:placeholder-shown) {
+  @apply ring-red-200;
+  @apply border-red-400;
+}
+
+/* Success state */
+input:valid:not(:placeholder-shown),
+select:valid:not(:placeholder-shown) {
+  @apply ring-green-200;
+  @apply border-green-400;
+}
+
+/* Labels */
+label {
+  @apply font-medium;
+  @apply text-slate-700;
+  @apply mb-1.5;
+}
+
+/* Button enhancements */
+button[type="submit"] {
+  @apply font-medium;
+  @apply shadow-md;
+  @apply shadow-sky-100;
+  @apply hover:shadow-lg;
+  @apply hover:shadow-sky-100;
+  @apply active:shadow-inner;
+  @apply active:scale-[0.98];
+}
+
+/* General styles and animations */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+.bg-pcu {
+  position: relative;
+  background: linear-gradient(rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.1)), url('../../pcu-building.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+
+/* Fade in animation */
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ========================================
+   RESPONSIVE DESIGN - MOBILE FIRST
+   ======================================== */
+
+/* Tablet devices (768px and below) */
+@media screen and (max-width: 768px) {
+  /* Container adjustments */
+  .max-w-7xl,
+  .max-w-6xl,
+  .max-w-5xl,
+  .max-w-4xl,
+  .max-w-3xl,
+  .max-w-2xl {
+    max-width: 100% !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+  }
+
+  /* Grid layouts - stack vertically */
+  .grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Flex layouts - stack vertically */
+  .flex {
+    flex-direction: column !important;
+  }
+
+  .flex.items-center {
+    align-items: stretch !important;
+  }
+
+  /* Keep certain flex layouts horizontal */
+  nav .flex,
+  .flex.gap-2,
+  .flex.gap-3 {
+    flex-direction: row !important;
+  }
+
+  /* Table responsiveness */
+  table {
+    display: block !important;
+    overflow-x: auto !important;
+    white-space: nowrap !important;
+    font-size: 0.875rem !important;
+  }
+
+  table thead {
+    display: table-header-group !important;
+  }
+
+  table tbody {
+    display: table-row-group !important;
+  }
+
+  table tr {
+    display: table-row !important;
+  }
+
+  table th,
+  table td {
+    display: table-cell !important;
+    padding: 0.5rem !important;
+  }
+
+  /* Button adjustments */
+  button,
+  .btn,
+  a.btn {
+    width: auto !important;
+    max-width: 100% !important;
+    text-align: center !important;
+    margin-bottom: 0.5rem !important;
+  }
+  
+  /* Don't force full width on inline buttons */
+  button:not([type="submit"]):not(.w-full) {
+    width: auto !important;
+  }
+  
+  .w-full {
+    width: 100% !important;
+  }
+
+  /* Sidebar adjustments */
+  aside {
+    position: fixed !important;
+    width: 16rem !important;
+    height: 100vh !important;
+    bottom: auto !important;
+    top: 0 !important;
+    left: 0 !important;
+    z-index: 1000 !important;
+    overflow-y: auto !important;
+  }
+
+  aside .p-6 {
+    padding: 1rem !important;
+  }
+
+  aside nav {
+    display: block !important;
+    overflow-x: visible !important;
+  }
+
+  aside nav a {
+    width: 100% !important;
+    min-width: auto !important;
+    font-size: 0.875rem !important;
+    padding: 0.75rem !important;
+    margin-bottom: 0.25rem !important;
+  }
+
+  /* Main content with sidebar */
+  .ml-64 {
+    margin-left: 0 !important;
+    margin-bottom: 0 !important;
+    padding-top: 4rem !important;
+  }
+
+  /* Card layouts */
+  .rounded-2xl,
+  .rounded-xl,
+  .rounded-lg {
+    border-radius: 0.5rem !important;
+  }
+
+  /* Padding adjustments */
+  .p-8 {
+    padding: 1rem !important;
+  }
+
+  .p-6 {
+    padding: 0.75rem !important;
+  }
+
+  .p-4 {
+    padding: 0.5rem !important;
+  }
+
+  /* Text size adjustments */
+  h1 {
+    font-size: 1.5rem !important;
+  }
+
+  h2 {
+    font-size: 1.25rem !important;
+  }
+
+  h3 {
+    font-size: 1.125rem !important;
+  }
+
+  /* Form inputs */
+  input,
+  select,
+  textarea {
+    font-size: 16px !important; /* Prevents zoom on iOS */
+    width: 100% !important;
+  }
+
+  /* Modal adjustments */
+  .fixed.inset-0 > div {
+    max-width: 95% !important;
+    margin: 1rem !important;
+  }
+
+  /* Hide less important elements on mobile */
+  .hide-on-mobile {
+    display: none !important;
+  }
+
+  /* Adjust spacing */
+  .space-y-8 > * + * {
+    margin-top: 1.5rem !important;
+  }
+
+  .space-y-6 > * + * {
+    margin-top: 1rem !important;
+  }
+
+  /* Profile picture size */
+  .w-32.h-32 {
+    width: 6rem !important;
+    height: 6rem !important;
+  }
+
+  /* Stats cards */
+  .grid.grid-cols-1.md\\:grid-cols-2.lg\\:grid-cols-4 {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Small mobile devices (480px and below) */
+@media screen and (max-width: 480px) {
+  /* Even smaller text */
+  body {
+    font-size: 14px !important;
+  }
+
+  h1 {
+    font-size: 1.25rem !important;
+  }
+
+  h2 {
+    font-size: 1.125rem !important;
+  }
+
+  h3 {
+    font-size: 1rem !important;
+  }
+
+  /* Compact padding */
+  .p-8,
+  .p-6 {
+    padding: 0.5rem !important;
+  }
+
+  .p-4 {
+    padding: 0.375rem !important;
+  }
+
+  /* Smaller buttons */
+  button,
+  .btn {
+    padding: 0.5rem 1rem !important;
+    font-size: 0.875rem !important;
+  }
+
+  /* Compact navigation */
+  nav {
+    padding: 0.5rem !important;
+  }
+
+  .h-16 {
+    height: 3.5rem !important;
+  }
+
+  /* Logo size */
+  img[alt="PCU Logo"] {
+    width: 2rem !important;
+    height: 2rem !important;
+  }
+
+  /* Profile picture */
+  .w-32.h-32,
+  .w-24.h-24 {
+    width: 4rem !important;
+    height: 4rem !important;
+    font-size: 2rem !important;
+  }
+
+  /* Table text */
+  table {
+    font-size: 0.75rem !important;
+  }
+
+  table th,
+  table td {
+    padding: 0.25rem !important;
+  }
+
+  /* Card spacing */
+  .space-y-4 > * + * {
+    margin-top: 0.5rem !important;
+  }
+
+  /* Modal sizing */
+  .fixed.inset-0 > div {
+    max-width: 100% !important;
+    margin: 0.5rem !important;
+    max-height: 90vh !important;
+    overflow-y: auto !important;
+  }
+}
+
+/* Landscape orientation adjustments */
+@media screen and (max-width: 768px) and (orientation: landscape) {
+  /* Reduce vertical spacing in landscape */
+  .min-h-screen {
+    min-height: auto !important;
+  }
+
+  .py-12 {
+    padding-top: 2rem !important;
+    padding-bottom: 2rem !important;
+  }
+
+  .py-8 {
+    padding-top: 1rem !important;
+    padding-bottom: 1rem !important;
+  }
+}
+
+/* Touch device improvements */
+@media (hover: none) and (pointer: coarse) {
+  /* Larger touch targets */
+  button,
+  a,
+  input[type="submit"],
+  input[type="button"] {
+    min-height: 44px !important;
+    min-width: 44px !important;
+  }
+
+  /* Remove hover effects on touch devices */
+  .hover\\:shadow-lg:hover {
+    box-shadow: inherit !important;
+  }
+
+  .hover\\:bg-slate-50:hover {
+    background-color: inherit !important;
+  }
+}
+
+/* Responsive utilities */
+@media screen and (min-width: 769px) {
+  .mobile-only {
+    display: none !important;
+  }
+}
+
+@media screen and (max-width: 768px) {
+  .desktop-only {
+    display: none !important;
+  }
+
+  /* Stack buttons in action groups */
+  .flex.gap-2 button,
+  .flex.gap-3 button {
+    flex: 1 1 auto !important;
+  }
+
+  /* Full width cards */
+  .w-full.max-w-md,
+  .w-full.max-w-lg,
+  .w-full.max-w-xl {
+    max-width: 100% !important;
+  }
+}
