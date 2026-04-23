@@ -309,6 +309,9 @@ $activeSection = $_GET['section'] ?? 'students';
             }
             .main-content {
                 margin-left: 17.5rem !important;
+                width: calc(100vw - 17.5rem) !important;
+                max-width: calc(100vw - 17.5rem) !important;
+                box-sizing: border-box;
             }
         }
         
@@ -324,6 +327,9 @@ $activeSection = $_GET['section'] ?? 'students';
             .main-content {
                 transition: margin-left 0.3s ease-in-out;
                 margin-left: 0 !important;
+                width: 100vw !important;
+                max-width: 100vw !important;
+                box-sizing: border-box;
                 padding-bottom: 2rem !important;
                 padding-top: 1rem !important;
             }
@@ -1456,16 +1462,16 @@ $activeSection = $_GET['section'] ?? 'students';
                         <div class="grid gap-4">
                         <?php foreach ($violationAlerts as $student): ?>
                             <div class="border-2 <?php echo $student['active_violations_count'] > 0 ? 'border-red-300 bg-red-50/50' : 'border-amber-300 bg-amber-50/50'; ?> rounded-lg p-5 fade-in">
-                                <div class="flex items-start justify-between">
-                                    <div class="flex-1">
+                                <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                                    <div class="flex-1 min-w-0">
                                         <div class="flex items-center gap-3 mb-3">
                                             <div class="<?php echo $student['active_violations_count'] > 0 ? 'bg-red-100' : 'bg-amber-100'; ?> p-2 rounded-full">
                                                 <svg class="w-6 h-6 <?php echo $student['active_violations_count'] > 0 ? 'text-red-600' : 'text-amber-600'; ?>" fill="currentColor" viewBox="0 0 20 20">
                                                     <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
                                                 </svg>
                                             </div>
-                                            <div>
-                                                <h3 class="font-bold text-slate-800 text-lg">
+                                            <div class="min-w-0">
+                                                <h3 class="font-bold text-slate-800 text-lg break-words">
                                                     <?php echo htmlspecialchars($student['name']); ?>
                                                 </h3>
                                                 <p class="text-sm text-slate-600">Student ID: <?php echo htmlspecialchars($student['student_id']); ?></p>
@@ -1481,14 +1487,14 @@ $activeSection = $_GET['section'] ?? 'students';
                                         </div>
                                         
                                         <div class="bg-white rounded-lg p-4 border <?php echo $student['active_violations_count'] > 0 ? 'border-red-200' : 'border-amber-200'; ?>">
-                                            <div class="grid grid-cols-2 gap-4">
+                                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                                 <div>
                                                     <p class="text-xs text-slate-500 mb-1">Email Address</p>
-                                                    <p class="text-sm font-medium text-slate-700"><?php echo htmlspecialchars($student['email']); ?></p>
+                                                    <p class="text-sm font-medium text-slate-700 break-words"><?php echo htmlspecialchars($student['email']); ?></p>
                                                 </div>
                                                 <div>
                                                     <p class="text-xs text-slate-500 mb-1">RFID Card UID</p>
-                                                    <code class="text-sm bg-slate-100 px-2 py-1 rounded font-mono">
+                                                    <code class="text-sm bg-slate-100 px-2 py-1 rounded font-mono break-all whitespace-normal">
                                                         <?php echo $student['rfid_uid'] ? htmlspecialchars($student['rfid_uid']) : 'Not Registered'; ?>
                                                     </code>
                                                 </div>
@@ -1496,7 +1502,7 @@ $activeSection = $_GET['section'] ?? 'students';
                                         </div>
                                     </div>
                                     
-                                    <div class="flex flex-col gap-2 ml-4">
+                                    <div class="flex flex-col sm:flex-row lg:flex-col gap-2 lg:ml-4">
                                         <button 
                                             onclick="openViolationHistoryModal('<?php echo htmlspecialchars($student['id']); ?>', '<?php echo htmlspecialchars($student['name']); ?>', '<?php echo htmlspecialchars($student['student_id']); ?>')"
                                             class="px-4 py-2 bg-blue-500 text-white rounded-lg btn-hover text-sm whitespace-nowrap flex items-center gap-2"
