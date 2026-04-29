@@ -2,7 +2,7 @@
 /**
  * Post-Google Sign-In completion endpoint for NEW students.
  * - Handles Accept/Decline actions submitted from login.php modal
- * - Validates Parent/Guardian full name, email, and contact number
+ * - Enforces DOB-driven age gating with conditional guardian requirements
  * - Creates the student account as Pending verification
  */
 
@@ -90,6 +90,32 @@ function split_full_name(string $fullName): array {
     return [$firstName, $lastName];
 }
 
+// [AGENT CHANGE — TASK 2]
+function users_column_exists(PDO $pdo, string $column): bool {
+    try {
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*)
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'users'
+              AND COLUMN_NAME = ?
+        ");
+        $stmt->execute([$column]);
+        return (int)$stmt->fetchColumn() > 0;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+function consent_logs_table_exists(PDO $pdo): bool {
+    try {
+        return (bool)$pdo->query("SHOW TABLES LIKE 'consent_logs'")->fetch();
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+// [END TASK 2]
+
 verify_csrf();
 
 $action = (string)($_POST['action'] ?? '');
@@ -112,12 +138,16 @@ $accepted = (string)($_POST['accepted_terms'] ?? '');
 $guardianFullName = trim((string)($_POST['guardian_full_name'] ?? ''));
 $guardianEmail = strtolower(trim((string)($_POST['guardian_email'] ?? '')));
 $guardianContact = trim((string)($_POST['guardian_contact_number'] ?? ''));
+$dobRaw = trim((string)($_POST['dob'] ?? ''));
+$submittedConsentType = trim((string)($_POST['consent_type'] ?? ''));
 
 $_SESSION['google_terms_old'] = [
   'guardian_full_name' => $guardianFullName,
   'guardian_email' => $guardianEmail,
   'guardian_contact_number' => $guardianContact,
+  'dob' => $dobRaw,
   'accepted_terms' => $accepted,
+  'consent_type' => $submittedConsentType,
 ];
 
 if ($accepted !== '1') {
@@ -126,17 +156,43 @@ if ($accepted !== '1') {
   exit;
 }
 
-if ($guardianFullName === '' || $guardianEmail === '' || $guardianContact === '') {
-  $_SESSION['google_terms_error'] = 'Please provide Parent/Guardian full name, email, and contact number.';
+// [AGENT CHANGE — TASK 2]
+if ($dobRaw === '') {
+  $_SESSION['google_terms_error'] = 'Date of birth is required.';
   header('Location: login.php');
   exit;
 }
 
-if (!filter_var($guardianEmail, FILTER_VALIDATE_EMAIL)) {
+try {
+  $dobDate = new DateTime($dobRaw);
+  $todayDate = new DateTime('today');
+  if ($dobDate > $todayDate) {
+    $_SESSION['google_terms_error'] = 'Date of birth cannot be in the future.';
+    header('Location: login.php');
+    exit;
+  }
+  $age = (int)$dobDate->diff($todayDate)->y;
+} catch (Throwable $e) {
+  $_SESSION['google_terms_error'] = 'Please enter a valid date of birth.';
+  header('Location: login.php');
+  exit;
+}
+
+$_SESSION['google_terms_old']['computed_age'] = (string)$age;
+$parentalConsentRequired = $age <= 18;
+
+if ($parentalConsentRequired && ($guardianFullName === '' || $guardianEmail === '' || $guardianContact === '')) {
+  $_SESSION['google_terms_error'] = 'Parent/Guardian full name, email, and contact number are required for students aged 18 or below.';
+  header('Location: login.php');
+  exit;
+}
+
+if ($parentalConsentRequired && !filter_var($guardianEmail, FILTER_VALIDATE_EMAIL)) {
   $_SESSION['google_terms_error'] = 'Please enter a valid Parent/Guardian email address.';
   header('Location: login.php');
   exit;
 }
+// [END TASK 2]
 
 try {
   // Ensure this is still a brand-new signup (avoid duplicates if user refreshes)
@@ -159,67 +215,109 @@ try {
 
   $termsAt = date('Y-m-d H:i:s');
   $termsVersion = gatewatch_terms_version();
+  $dobForInsert = $dobDate->format('Y-m-d');
+
+  // [AGENT CHANGE — TASK 2]
+  $hasDobColumn = users_column_exists($pdo, 'dob');
+  $hasComputedAgeColumn = users_column_exists($pdo, 'computed_age');
+  $hasGuardianNameColumn = users_column_exists($pdo, 'guardian_name');
+  $hasGuardianContactColumn = users_column_exists($pdo, 'guardian_contact');
+  $hasGuardianEmailColumn = users_column_exists($pdo, 'guardian_email');
+
+  $insertColumns = ['student_id', 'name', 'email', 'password', 'google_id', 'role', 'status', 'created_at'];
+  $insertPlaceholders = ['?', '?', '?', '?', '?', '"Student"', '"Pending"', 'NOW()'];
+  $insertValues = [$temporaryStudentId, $studentName, $studentEmail, $hashedPassword, $googleId];
 
   if (users_terms_columns_available($pdo)) {
-    $insertStmt = $pdo->prepare('
-      INSERT INTO users (student_id, name, email, password, google_id, role, status, created_at, terms_accepted_at, terms_version)
-      VALUES (?, ?, ?, ?, ?, "Student", "Pending", NOW(), ?, ?)
-    ');
-    $insertStmt->execute([
-      $temporaryStudentId,
-      $studentName,
-      $studentEmail,
-      $hashedPassword,
-      $googleId,
-      $termsAt,
-      $termsVersion,
-    ]);
-  } else {
-    $insertStmt = $pdo->prepare('
-      INSERT INTO users (student_id, name, email, password, google_id, role, status, created_at)
-      VALUES (?, ?, ?, ?, ?, "Student", "Pending", NOW())
-    ');
-    $insertStmt->execute([
-      $temporaryStudentId,
-      $studentName,
-      $studentEmail,
-      $hashedPassword,
-      $googleId,
-    ]);
+    $insertColumns[] = 'terms_accepted_at';
+    $insertColumns[] = 'terms_version';
+    $insertPlaceholders[] = '?';
+    $insertPlaceholders[] = '?';
+    $insertValues[] = $termsAt;
+    $insertValues[] = $termsVersion;
   }
+
+  if ($hasDobColumn) {
+    $insertColumns[] = 'dob';
+    $insertPlaceholders[] = '?';
+    $insertValues[] = $dobForInsert;
+  }
+  if ($hasComputedAgeColumn) {
+    $insertColumns[] = 'computed_age';
+    $insertPlaceholders[] = '?';
+    $insertValues[] = $age;
+  }
+  if ($hasGuardianNameColumn) {
+    $insertColumns[] = 'guardian_name';
+    $insertPlaceholders[] = '?';
+    $insertValues[] = $parentalConsentRequired ? $guardianFullName : null;
+  }
+  if ($hasGuardianContactColumn) {
+    $insertColumns[] = 'guardian_contact';
+    $insertPlaceholders[] = '?';
+    $insertValues[] = $parentalConsentRequired ? $guardianContact : null;
+  }
+  if ($hasGuardianEmailColumn) {
+    $insertColumns[] = 'guardian_email';
+    $insertPlaceholders[] = '?';
+    $insertValues[] = $parentalConsentRequired ? $guardianEmail : null;
+  }
+
+  $insertSql = 'INSERT INTO users (' . implode(', ', $insertColumns) . ') VALUES (' . implode(', ', $insertPlaceholders) . ')';
+  $insertStmt = $pdo->prepare($insertSql);
+  $insertStmt->execute($insertValues);
+  // [END TASK 2]
 
   $newUserId = (int)$pdo->lastInsertId();
 
-  // Upsert guardian by email, then link as primary
-  [$guardianFirst, $guardianLast] = split_full_name($guardianFullName);
+  // [AGENT CHANGE — TASK 2]
+  if ($parentalConsentRequired) {
+    // Upsert guardian by email, then link as primary.
+    [$guardianFirst, $guardianLast] = split_full_name($guardianFullName);
 
-  $stmt = $pdo->prepare('SELECT id FROM guardians WHERE email = ? LIMIT 1');
-  $stmt->execute([$guardianEmail]);
-  $guardianId = (int)($stmt->fetchColumn() ?: 0);
+    $stmt = $pdo->prepare('SELECT id FROM guardians WHERE email = ? LIMIT 1');
+    $stmt->execute([$guardianEmail]);
+    $guardianId = (int)($stmt->fetchColumn() ?: 0);
 
-  if ($guardianId > 0) {
-    // Keep existing relationship; update contact info and name to latest provided.
-    $update = $pdo->prepare('UPDATE guardians SET first_name = ?, last_name = ?, phone_number = ? WHERE id = ?');
-    $update->execute([$guardianFirst ?: 'Guardian', $guardianLast ?: 'Contact', $guardianContact, $guardianId]);
-  } else {
-    $insert = $pdo->prepare('
-      INSERT INTO guardians (email, first_name, last_name, phone_number, relationship)
-      VALUES (?, ?, ?, ?, "Guardian")
+    if ($guardianId > 0) {
+      $update = $pdo->prepare('UPDATE guardians SET first_name = ?, last_name = ?, phone_number = ? WHERE id = ?');
+      $update->execute([$guardianFirst ?: 'Guardian', $guardianLast ?: 'Contact', $guardianContact, $guardianId]);
+    } else {
+      $insert = $pdo->prepare('
+        INSERT INTO guardians (email, first_name, last_name, phone_number, relationship)
+        VALUES (?, ?, ?, ?, "Guardian")
+      ');
+      $insert->execute([
+        $guardianEmail,
+        $guardianFirst ?: 'Guardian',
+        $guardianLast ?: 'Contact',
+        $guardianContact,
+      ]);
+      $guardianId = (int)$pdo->lastInsertId();
+    }
+
+    $link = $pdo->prepare('
+      INSERT INTO student_guardians (student_id, guardian_id, is_primary)
+      VALUES (?, ?, 1)
     ');
-    $insert->execute([
-      $guardianEmail,
-      $guardianFirst ?: 'Guardian',
-      $guardianLast ?: 'Contact',
-      $guardianContact,
-    ]);
-    $guardianId = (int)$pdo->lastInsertId();
+    $link->execute([$newUserId, $guardianId]);
   }
 
-  $link = $pdo->prepare('
-    INSERT INTO student_guardians (student_id, guardian_id, is_primary)
-    VALUES (?, ?, 1)
-  ');
-  $link->execute([$newUserId, $guardianId]);
+  if (consent_logs_table_exists($pdo)) {
+    $consentStmt = $pdo->prepare('
+      INSERT INTO consent_logs (user_id, student_id, dob, age_at_registration, parental_consent_required, terms_version, accepted_at)
+      VALUES (?, ?, ?, ?, ?, ?, NOW())
+    ');
+    $consentStmt->execute([
+      $newUserId,
+      $temporaryStudentId,
+      $dobForInsert,
+      $age,
+      $parentalConsentRequired ? 1 : 0,
+      $termsVersion !== '' ? substr($termsVersion, 0, 20) : 'v1.0',
+    ]);
+  }
+  // [END TASK 2]
 
   $pdo->commit();
 

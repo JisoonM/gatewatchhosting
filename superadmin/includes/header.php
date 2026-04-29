@@ -187,33 +187,25 @@ send_security_headers();
                 </div>
                 
                 <!-- User Menu -->
-                <div class="superadmin-user-menu flex items-center gap-4" x-data="{ open: false }">
-                    <div class="relative">
+                <div class="superadmin-user-menu flex items-center gap-4">
+                    <div class="relative" id="superadminMenuContainer">
                         <button 
-                            @click="open = !open"
+                            onclick="document.getElementById('superadminDropdown').classList.toggle('hidden')"
                             class="superadmin-user-trigger flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-100 transition-colors"
                         >
                             <div class="superadmin-user-avatar w-8 h-8 bg-gradient-to-br from-[#0056b3] to-[#003d82] rounded-full flex items-center justify-center">
                                 <span class="text-white font-semibold text-sm"><?php echo strtoupper(substr($_SESSION['superadmin_name'] ?? 'SA', 0, 2)); ?></span>
                             </div>
                             <span class="text-slate-700 font-medium hidden sm:inline"><?php echo e($_SESSION['superadmin_name'] ?? 'Super Admin'); ?></span>
-                            <svg class="superadmin-user-chevron w-4 h-4 text-slate-400 transition-transform" :class="{ 'rotate-180': open }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg class="superadmin-user-chevron w-4 h-4 text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                             </svg>
                         </button>
                         
                         <!-- Dropdown -->
                         <div 
-                            x-show="open" 
-                            @click.away="open = false"
-                            x-transition:enter="transition ease-out duration-100"
-                            x-transition:enter-start="opacity-0 scale-95"
-                            x-transition:enter-end="opacity-100 scale-100"
-                            x-transition:leave="transition ease-in duration-75"
-                            x-transition:leave-start="opacity-100 scale-100"
-                            x-transition:leave-end="opacity-0 scale-95"
-                            class="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden z-50"
-                            style="display: none;"
+                            id="superadminDropdown"
+                            class="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden z-50 hidden"
                         >
                             <div class="px-4 py-3 border-b border-slate-100">
                                 <p class="text-sm font-semibold text-slate-800"><?php echo e($_SESSION['superadmin_name'] ?? 'Super Admin'); ?></p>
@@ -236,6 +228,15 @@ send_security_headers();
                         </div>
                     </div>
                 </div>
+                <script>
+                    document.addEventListener('click', function(event) {
+                        const container = document.getElementById('superadminMenuContainer');
+                        const dropdown = document.getElementById('superadminDropdown');
+                        if (container && dropdown && !container.contains(event.target)) {
+                            dropdown.classList.add('hidden');
+                        }
+                    });
+                </script>
             </div>
         </div>
     </nav>

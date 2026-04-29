@@ -9,18 +9,20 @@ require_once __DIR__ . '/../db.php';
 
 header('Content-Type: application/json');
 
-// Security check: Admin only
-if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
+// [AGENT CHANGE — TASK 4]
+// Security check: Superadmin only
+if (!isset($_SESSION['superadmin_logged_in']) || $_SESSION['superadmin_logged_in'] !== true) {
     http_response_code(401);
     echo json_encode(['success' => false, 'error' => 'Unauthorized']);
     exit;
 }
 
 require_permission('audit.read', [
-    'actor_role' => 'admin',
+    'actor_role' => 'superadmin',
     'response' => 'json',
     'message' => 'Forbidden: missing permission audit.read.',
 ]);
+// [END TASK 4]
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     http_response_code(405);

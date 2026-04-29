@@ -60,6 +60,9 @@ $openGuardianStep = $showGoogleTermsModal && (
 $guardianNameOld = trim((string)($googleTermsOld['guardian_full_name'] ?? ''));
 $guardianEmailOld = trim((string)($googleTermsOld['guardian_email'] ?? ''));
 $guardianContactOld = trim((string)($googleTermsOld['guardian_contact_number'] ?? ''));
+$dobOld = trim((string)($googleTermsOld['dob'] ?? ''));
+$ageOld = trim((string)($googleTermsOld['computed_age'] ?? ''));
+$oldConsentType = trim((string)($googleTermsOld['consent_type'] ?? ''));
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -361,7 +364,7 @@ $guardianContactOld = trim((string)($googleTermsOld['guardian_contact_number'] ?
             <div class="min-w-0">
               <p class="text-[0.62rem] sm:text-xs uppercase tracking-[0.16em] text-sky-200/80">GateWatch Verification</p>
               <h2 class="text-2xl sm:text-3xl font-semibold tracking-tight leading-tight">Complete your registration</h2>
-              <p class="mt-2 text-sky-100/85 text-sm sm:text-base">Before we create your GateWatch account, please review the Terms and provide emergency contact details.</p>
+              <p class="mt-2 text-sky-100/85 text-sm sm:text-base">Before we create your GateWatch account, please review the Terms, enter your date of birth, and complete the required consent details.</p>
             </div>
           </div>
 
@@ -386,7 +389,7 @@ $guardianContactOld = trim((string)($googleTermsOld['guardian_contact_number'] ?
 
           <div class="flex items-center gap-2 text-xs text-sky-100/70">
             <span class="inline-flex h-2 w-2 rounded-full bg-sky-400"></span>
-            <span><?php echo $openGuardianStep ? 'Step 2 of 2: Guardian details' : 'Step 1 of 2: Review terms'; ?></span>
+            <span><?php echo $openGuardianStep ? 'Step 2 of 2: Date of Birth & consent details' : 'Step 1 of 2: Review terms'; ?></span>
           </div>
 
           <div class="<?php echo $openGuardianStep ? ' hidden' : ''; ?>" id="step-terms-login">
@@ -405,9 +408,8 @@ $guardianContactOld = trim((string)($googleTermsOld['guardian_contact_number'] ?
               <input id="accept-login" type="checkbox" class="mt-1 h-4 w-4 shrink-0 rounded border-white/30 bg-white/10 text-sky-400" <?php echo $openGuardianStep ? 'checked' : ''; ?> />
               <label for="accept-login" class="min-w-0 text-sm leading-relaxed text-sky-100/90 [text-align:justify] break-words">
                 I have read and I agree to the Terms and Conditions, including my consent for GateWatch to collect and use my
-                <strong>Full Name</strong>, <strong>Student ID</strong>, <strong>PCU Email Address</strong>, and my
-                <strong>Parent/Guardian full name</strong>, <strong>email</strong>, and <strong>contact number</strong> for
-                registration and emergency contact purposes.
+                <strong>Full Name</strong>, <strong>Student ID</strong>, <strong>PCU Email Address</strong>, and required
+                emergency contact details for registration and safety purposes.
               </label>
             </div>
 
@@ -426,17 +428,27 @@ $guardianContactOld = trim((string)($googleTermsOld['guardian_contact_number'] ?
           </div>
 
           <div class="<?php echo $openGuardianStep ? '' : ' hidden'; ?>" id="step-guardian-login">
-            <h3 class="text-lg font-semibold leading-tight">Parent/Guardian Emergency Contact</h3>
+            <h3 class="text-lg font-semibold leading-tight">Date of Birth & Consent Details</h3>
             <p class="text-sm text-sky-100/85 mt-2 [text-align:justify]">
-              Please provide your Parent/Guardian information so GateWatch can use it for emergency contact and registration support.
+              Your age is computed from your date of birth and cannot be manually overridden.
             </p>
 
             <form method="POST" action="google_terms.php" class="mt-5 space-y-4">
               <?php echo csrf_input(); ?>
               <input type="hidden" name="action" value="complete" />
               <input type="hidden" name="accepted_terms" id="accepted_terms_login" value="<?php echo $openGuardianStep ? '1' : '0'; ?>" />
+              <input type="hidden" name="computed_age" id="computed_age_login" value="<?php echo htmlspecialchars($ageOld); ?>" />
+              <input type="hidden" name="consent_type" id="consent_type_login" value="<?php echo htmlspecialchars($oldConsentType !== '' ? $oldConsentType : 'adult'); ?>" />
 
               <div>
+                <label class="block text-sm font-medium text-sky-50">Date of Birth <span class="text-red-300">*</span></label>
+                <input name="dob" id="dob_login" type="date" required max="<?php echo date('Y-m-d'); ?>"
+                  value="<?php echo htmlspecialchars($dobOld); ?>"
+                  class="mt-1 w-full rounded-xl border border-white/25 bg-white/10 px-4 py-3 text-white placeholder:text-sky-100/50 focus:outline-none focus:ring-2 focus:ring-sky-300/60" />
+                <p id="computed-age-label" class="mt-2 text-sm text-sky-100/90">Your age: <?php echo ($ageOld !== '' ? (int)$ageOld : '--'); ?> years old</p>
+              </div>
+
+              <div id="guardian-fields-login">
                 <label class="block text-sm font-medium text-sky-50">Parent/Guardian Full Name</label>
                 <input name="guardian_full_name" type="text" required placeholder="e.g., Juan Dela Cruz"
                   value="<?php echo htmlspecialchars($guardianNameOld); ?>"
@@ -457,9 +469,17 @@ $guardianContactOld = trim((string)($googleTermsOld['guardian_contact_number'] ?
                   class="mt-1 w-full rounded-xl border border-white/25 bg-white/10 px-4 py-3 text-white placeholder:text-sky-100/50 focus:outline-none focus:ring-2 focus:ring-sky-300/60" />
               </div>
 
+              <div id="minor-consent-clause-login" class="rounded-xl border border-white/20 bg-white/10 p-3 text-sm text-sky-100/90 [text-align:justify]">
+                By registering, a parent/guardian will be notified of this student's attendance violations and emergency incidents.
+              </div>
+
+              <div id="adult-consent-clause-login" class="rounded-xl border border-white/20 bg-white/10 p-3 text-sm text-sky-100/90 [text-align:justify]">
+                By registering, I acknowledge responsibility for my own attendance record.
+              </div>
+
               <div class="terms-input-row pt-2">
                 <button type="button" id="btn-back-login" class="w-full sm:w-auto rounded-full border border-white/25 bg-white/10 px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/15 transition">Back</button>
-                <button type="submit" class="w-full sm:w-auto rounded-full bg-emerald-400/90 hover:bg-emerald-400 px-6 py-2.5 text-sm font-semibold text-slate-900 transition">Submit & Create Account</button>
+                <button type="submit" id="btn-submit-login" class="w-full sm:w-auto rounded-full bg-emerald-400/90 hover:bg-emerald-400 px-6 py-2.5 text-sm font-semibold text-slate-900 transition disabled:opacity-50 disabled:cursor-not-allowed">Submit & Create Account</button>
               </div>
             </form>
           </div>
@@ -622,8 +642,67 @@ $guardianContactOld = trim((string)($googleTermsOld['guardian_contact_number'] ?
       const stepGuardianLogin = document.getElementById('step-guardian-login');
       const acceptedTermsLogin = document.getElementById('accepted_terms_login');
       const btnBackLogin = document.getElementById('btn-back-login');
+      const dobLogin = document.getElementById('dob_login');
+      const computedAgeLabel = document.getElementById('computed-age-label');
+      const computedAgeInput = document.getElementById('computed_age_login');
+      const consentTypeInput = document.getElementById('consent_type_login');
+      const guardianFields = document.getElementById('guardian-fields-login');
+      const minorConsent = document.getElementById('minor-consent-clause-login');
+      const adultConsent = document.getElementById('adult-consent-clause-login');
+      const submitBtn = document.getElementById('btn-submit-login');
 
       if (acceptLogin && btnContinueLogin && stepTermsLogin && stepGuardianLogin && acceptedTermsLogin && btnBackLogin) {
+        // [AGENT CHANGE — TASK 2]
+        const guardianInputs = guardianFields
+          ? Array.from(guardianFields.querySelectorAll('input[name="guardian_full_name"], input[name="guardian_email"], input[name="guardian_contact_number"]'))
+          : [];
+
+        const computeAge = (dobString) => {
+          if (!dobString) return null;
+          const dob = new Date(dobString + 'T00:00:00');
+          if (Number.isNaN(dob.getTime())) return null;
+          const today = new Date();
+          const thisYearBirthday = new Date(today.getFullYear(), dob.getMonth(), dob.getDate());
+          let age = today.getFullYear() - dob.getFullYear();
+          if (today < thisYearBirthday) age -= 1;
+          if (age < 0 || age > 120) return null;
+          return age;
+        };
+
+        const syncDobDrivenFields = () => {
+          const age = computeAge(dobLogin?.value || '');
+          const isMinor = age !== null && age <= 18;
+
+          if (computedAgeLabel) {
+            computedAgeLabel.textContent = age === null ? 'Your age: -- years old' : ('Your age: ' + age + ' years old');
+          }
+          if (computedAgeInput) {
+            computedAgeInput.value = age === null ? '' : String(age);
+          }
+          if (consentTypeInput) {
+            consentTypeInput.value = isMinor ? 'minor' : 'adult';
+          }
+
+          if (guardianFields) guardianFields.classList.toggle('hidden', !isMinor);
+          if (minorConsent) minorConsent.classList.toggle('hidden', !isMinor);
+          if (adultConsent) adultConsent.classList.toggle('hidden', isMinor);
+
+          guardianInputs.forEach((input) => {
+            input.required = isMinor;
+          });
+        };
+
+        const syncSubmitButtonState = () => {
+          const age = computeAge(dobLogin?.value || '');
+          const isMinor = age !== null && age <= 18;
+          const hasDob = age !== null;
+          const hasGuardianValues = !isMinor || guardianInputs.every((input) => input.value.trim() !== '');
+          if (submitBtn) {
+            submitBtn.disabled = !(hasDob && hasGuardianValues);
+          }
+        };
+        // [END TASK 2]
+
         const hasReachedBottom = () => {
           if (!termsScrollBox) return true;
 
@@ -662,7 +741,10 @@ $guardianContactOld = trim((string)($googleTermsOld['guardian_contact_number'] ?
           stepTermsLogin.classList.add('hidden');
           stepGuardianLogin.classList.remove('hidden');
 
-          const firstInput = stepGuardianLogin.querySelector('input[name="guardian_full_name"]');
+          syncDobDrivenFields();
+          syncSubmitButtonState();
+
+          const firstInput = stepGuardianLogin.querySelector('input[name="dob"]');
           if (firstInput) {
             firstInput.focus({ preventScroll: true });
           }
@@ -675,6 +757,24 @@ $guardianContactOld = trim((string)($googleTermsOld['guardian_contact_number'] ?
           acceptedTermsLogin.value = '0';
           stepTermsLogin.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
+
+        // [AGENT CHANGE — TASK 2]
+        if (dobLogin) {
+          dobLogin.addEventListener('change', () => {
+            syncDobDrivenFields();
+            syncSubmitButtonState();
+          });
+          dobLogin.addEventListener('input', () => {
+            syncDobDrivenFields();
+            syncSubmitButtonState();
+          });
+        }
+        guardianInputs.forEach((input) => {
+          input.addEventListener('input', syncSubmitButtonState);
+        });
+        syncDobDrivenFields();
+        syncSubmitButtonState();
+        // [END TASK 2]
       }
     });
 

@@ -36,6 +36,46 @@ function fetch_active_qr_challenge_id(PDO $pdo): ?string {
     return null;
 }
 
+// [AGENT CHANGE — TASK 1]
+function ensure_qr_identity_token(PDO $pdo, int $userId): ?string {
+    try {
+        $colStmt = $pdo->query("SHOW COLUMNS FROM users LIKE 'qr_identity_token'");
+        if (!$colStmt->fetch()) {
+            return null;
+        }
+
+        $stmt = $pdo->prepare('SELECT qr_identity_token FROM users WHERE id = ? LIMIT 1');
+        $stmt->execute([$userId]);
+        $current = (string)($stmt->fetchColumn() ?? '');
+        if ($current !== '') {
+            return $current;
+        }
+
+        $token = function_exists('uuid_create')
+            ? uuid_create(UUID_TYPE_RANDOM)
+            : sprintf(
+                '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+                random_int(0, 0xffff), random_int(0, 0xffff),
+                random_int(0, 0xffff),
+                random_int(0, 0x0fff) | 0x4000,
+                random_int(0, 0x3fff) | 0x8000,
+                random_int(0, 0xffff), random_int(0, 0xffff), random_int(0, 0xffff)
+            );
+
+        $upd = $pdo->prepare('UPDATE users SET qr_identity_token = ? WHERE id = ? AND (qr_identity_token IS NULL OR qr_identity_token = "")');
+        $upd->execute([$token, $userId]);
+
+        $stmt = $pdo->prepare('SELECT qr_identity_token FROM users WHERE id = ? LIMIT 1');
+        $stmt->execute([$userId]);
+        $finalToken = (string)($stmt->fetchColumn() ?? '');
+        return $finalToken !== '' ? $finalToken : $token;
+    } catch (\Throwable $e) {
+        error_log('ensure_qr_identity_token error: ' . $e->getMessage());
+        return null;
+    }
+}
+// [END TASK 1]
+
 // Get user information from database
 try {
     $pdo = pdo();
@@ -56,16 +96,23 @@ try {
     $now = time();
     $issuer = (string) env('QR_TOKEN_ISSUER', env('APP_URL', 'gatewatch-local'));
     $audience = (string) env('QR_TOKEN_AUDIENCE', 'gatewatch-security');
+    // [AGENT CHANGE — TASK 1]
+    $qrIdentityToken = ensure_qr_identity_token($pdo, (int)$user['id']);
     $payload = [
         // Keep payload compact so QR density remains readable on student phones.
         'iss' => $issuer,
         'aud' => $audience,
         'purpose' => 'student_digital_id_qr',
-        'student_id' => $user['student_id'],
-        'email' => $user['email'],
+        'identity_token' => $qrIdentityToken ?: null,
         'issued_at' => $now,
         'expires_at' => $now + 300
     ];
+    if (($payload['identity_token'] ?? null) === null) {
+        // Backward-safe fallback for deployments without qr_identity_token column.
+        $payload['student_id'] = $user['student_id'];
+        $payload['email'] = $user['email'];
+    }
+    // [END TASK 1]
 
     $activeChallengeId = fetch_active_qr_challenge_id($pdo);
     if ($activeChallengeId !== null) {
@@ -714,18 +761,21 @@ try {
     <script src="assets/js/qrious.min.js"></script>
     <script>
         const qrCanvas = document.getElementById('qrcode');
-        const qrSize = 220;
+        // [AGENT CHANGE — TASK 1]
+        const qrSize = 200;
         const qrValue = <?php echo json_encode($jwt_token); ?>;
         function renderReliableQRCode() {
             return new QRious({
                 element: qrCanvas,
                 value: qrValue,
                 size: qrSize,
-                level: 'H',
+                level: 'M',
+                padding: 1,
                 background: '#ffffff',
                 foreground: '#000000'
             });
         }
+        // [END TASK 1]
 
         renderReliableQRCode();
         

@@ -510,7 +510,7 @@ try {
 
                 // Let the DB trigger keep `users.active_violations_count` accurate.
                 // Read the authoritative active count for response or follow-up actions.
-                $countStmt = $pdo->prepare("SELECT COUNT(*) FROM student_violations WHERE user_id = ? AND status = 'active'");
+                $countStmt = $pdo->prepare("SELECT COUNT(*) FROM student_violations WHERE user_id = ? AND status IN ('active', 'pending_reparation')");
                 $countStmt->execute([$userId]);
                 $newActive = (int)$countStmt->fetchColumn();
                 $pdo->prepare('UPDATE users SET active_violations_count = ? WHERE id = ?')->execute([$newActive, $userId]);

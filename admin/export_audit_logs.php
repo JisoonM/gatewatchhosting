@@ -8,12 +8,18 @@ ob_start();
 
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../includes/audit_helper.php';
-require_admin_auth();
+// [AGENT CHANGE — TASK 4]
+if (!isset($_SESSION['superadmin_logged_in']) || $_SESSION['superadmin_logged_in'] !== true) {
+    http_response_code(401);
+    echo 'Unauthorized';
+    exit;
+}
 require_permission('audit.export', [
-    'actor_role' => 'admin',
+    'actor_role' => 'superadmin',
     'response' => 'http',
     'message' => 'Forbidden: missing permission audit.export.',
 ]);
+// [END TASK 4]
 
 // ── Input sanitization ───────────────────────────────────────────────────────
 $actionType = trim($_GET['action_type'] ?? '');
@@ -22,7 +28,7 @@ $dateTo     = trim($_GET['date_to']     ?? '');
 
 $allowedActions = [
     'APPROVE_STUDENT', 'DENY_STUDENT', 'REGISTER_RFID', 'UNREGISTER_RFID',
-    'MARK_LOST', 'MARK_FOUND', 'UPDATE_STUDENT', 'DELETE_STUDENT',
+    'MARK_LOST', 'MARK_FOUND', 'UPDATE_STUDENT', 'ARCHIVE_STUDENT', 'DELETE_STUDENT',
     'ADD_VIOLATION', 'RESOLVE_VIOLATION', 'RESOLVE_ALL_VIOLATIONS',
     'ASSIGN_REPARATION', 'EXPORT_AUDIT_LOG',
 ];
@@ -112,6 +118,7 @@ function actionLabel(string $a): string
         'MARK_LOST'              => 'Mark Lost',
         'MARK_FOUND'             => 'Mark Found',
         'UPDATE_STUDENT'         => 'Update Student',
+        'ARCHIVE_STUDENT'        => 'Archive Student',
         'DELETE_STUDENT'         => 'Delete Student',
         'ADD_VIOLATION'          => 'Add Violation',
         'RESOLVE_VIOLATION'      => 'Resolve Violation',
@@ -132,6 +139,7 @@ function actionXf(string $a): int
         'MARK_LOST'              => 6,  // red
         'MARK_FOUND'             => 5,  // green
         'UPDATE_STUDENT'         => 8,  // blue
+        'ARCHIVE_STUDENT'        => 7,  // amber/slate
         'DELETE_STUDENT'         => 6,  // red
         'ADD_VIOLATION'          => 6,  // red
         'RESOLVE_VIOLATION'      => 9,  // teal

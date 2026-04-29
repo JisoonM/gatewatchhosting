@@ -3,22 +3,54 @@
 // Start the session and include database connection
 require_once __DIR__ . '/../db.php';
 
-require_admin_auth();
+// [AGENT CHANGE — TASK 3/4]
+$isAdminSession = isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true;
+$isSuperadminSession = isset($_SESSION['superadmin_logged_in']) && $_SESSION['superadmin_logged_in'] === true;
+if (!$isAdminSession && !$isSuperadminSession) {
+    header('Location: admin_login.php');
+    exit;
+}
+// [END TASK 3/4]
 
 $page_title = 'Student Management';
+$activeSection = $_GET['section'] ?? 'students';
+
+// [AGENT CHANGE — TASK 4]
+if ($activeSection === 'audit' && !$isSuperadminSession) {
+    header('Location: /pcurfid2/admin/homepage.php?section=students');
+    exit;
+}
+// [END TASK 4]
 
 // Get all students
 try {
     $pdo = pdo();
+    // [AGENT CHANGE — TASK 2]
+    $hasDobColumn = db_column_exists('users', 'dob');
+    $hasArchivedColumn = db_column_exists('users', 'is_archived');
+    $dobSelectExpr = $hasDobColumn ? 'u.dob' : 'NULL AS dob';
+    $dobSelectExprNoAlias = $hasDobColumn ? 'dob' : 'NULL AS dob';
+    $archivedExprU = $hasArchivedColumn ? 'COALESCE(u.is_archived, 0)' : '0';
+    $archivedExpr = $hasArchivedColumn ? 'COALESCE(is_archived, 0)' : '0';
+    // [END TASK 2]
     
     // Get all students WITHOUT registered RFID cards (for Student Management panel)
     // Only show Active students (exclude Pending students awaiting verification)
+    // [AGENT CHANGE — TASK 3]
+    if ($isSuperadminSession) {
+        $studentBaseFilter = 'u.role = "Student" AND u.deleted_at IS NULL';
+    } else {
+        $studentBaseFilter = 'u.role = "Student" AND u.status = "Active" AND u.deleted_at IS NULL AND ' . $archivedExprU . ' = 0';
+    }
+
+    $studentsExtraFilter = $isSuperadminSession ? '' : ' AND u.rfid_uid IS NULL';
     $query = '
-        SELECT id, student_id, name, email, course, status, role, rfid_uid, rfid_registered_at, profile_picture
-        FROM users 
-        WHERE role = "Student" AND rfid_uid IS NULL AND status = "Active" AND deleted_at IS NULL
-        ORDER BY created_at DESC
+        SELECT u.id, u.student_id, u.name, u.email, u.course, u.status, u.role, u.rfid_uid, u.rfid_registered_at, u.profile_picture, ' . $dobSelectExpr . '
+        FROM users u
+        WHERE ' . $studentBaseFilter . $studentsExtraFilter . '
+        ORDER BY u.created_at DESC
     ';
+    // [END TASK 3]
     $stmt = $pdo->prepare($query);
     $stmt->execute();
     $students = $stmt->fetchAll(\PDO::FETCH_ASSOC);
@@ -36,7 +68,7 @@ try {
 
     if ($hasGuardianTables) {
         $queryAll = '
-            SELECT u.id, u.student_id, u.name, u.email, u.course, u.status, u.role, u.rfid_uid, u.rfid_registered_at, u.profile_picture, u.face_registered, u.face_registered_at,
+            SELECT u.id, u.student_id, u.name, u.email, u.course, u.status, u.role, u.rfid_uid, u.rfid_registered_at, u.profile_picture, u.face_registered, u.face_registered_at, ' . $dobSelectExpr . ',
                    COALESCE((
                         SELECT TRIM(CONCAT(COALESCE(g.first_name, ""), " ", COALESCE(g.last_name, "")))
                         FROM student_guardians sg
@@ -54,16 +86,16 @@ try {
                         LIMIT 1
                    ), "") AS guardian_contact
             FROM users u
-            WHERE u.role = "Student" AND u.status = "Active" AND u.deleted_at IS NULL
+            WHERE ' . $studentBaseFilter . '
             ORDER BY u.created_at DESC
         ';
     } else {
         $queryAll = '
-            SELECT id, student_id, name, email, course, status, role, rfid_uid, rfid_registered_at, profile_picture, face_registered, face_registered_at,
+            SELECT id, student_id, name, email, course, status, role, rfid_uid, rfid_registered_at, profile_picture, face_registered, face_registered_at, ' . $dobSelectExprNoAlias . ',
                    "" AS guardian_name,
                    "" AS guardian_contact
             FROM users 
-            WHERE role = "Student" AND status = "Active" AND deleted_at IS NULL
+            WHERE ' . str_replace('u.', '', $studentBaseFilter) . '
             ORDER BY created_at DESC
         ';
     }
@@ -72,19 +104,25 @@ try {
     $allStudents = $stmtAll->fetchAll(\PDO::FETCH_ASSOC);
     
     // Get registered cards count (only Active students)
-    $stmt = $pdo->query('SELECT COUNT(*) FROM users WHERE role = "Student" AND rfid_uid IS NOT NULL AND status = "Active" AND deleted_at IS NULL');
+    $registeredCountQuery = 'SELECT COUNT(*) FROM users WHERE role = "Student" AND rfid_uid IS NOT NULL AND status = "Active" AND deleted_at IS NULL';
+    if (!$isSuperadminSession) {
+        $registeredCountQuery .= ' AND ' . $archivedExpr . ' = 0';
+    }
+    $stmt = $pdo->query($registeredCountQuery);
     $registeredCount = $stmt->fetchColumn();
     
     // Auto-populate rfid_cards table with existing RFID registrations
     // Use a safer approach to avoid trigger conflicts
     try {
         // First, get all users who need entries in rfid_cards
+        $archiveVisibilitySql = $isSuperadminSession ? '1=1' : ($archivedExprU . ' = 0');
         $stmt = $pdo->query("
             SELECT u.id, u.rfid_uid, u.rfid_registered_at
             FROM users u
             LEFT JOIN rfid_cards rc ON u.id = rc.user_id
             WHERE u.role = 'Student' 
             AND u.deleted_at IS NULL
+            AND {$archiveVisibilitySql}
             AND u.rfid_uid IS NOT NULL 
             AND rc.user_id IS NULL
         ");
@@ -115,27 +153,49 @@ try {
         error_log("Failed to auto-populate rfid_cards: " . $e->getMessage());
     }
     
-    // Get students with active (unresolved) violations only
-    // Students whose violations are all resolved (apprehended) are excluded automatically
+    // Get students with unresolved violations (active + pending_reparation).
+    // [AGENT CHANGE — TASK 5]
     $maxViolationLimit = 3;
-    $stmt = $pdo->prepare('SELECT id, student_id, name, email, rfid_uid, violation_count, 
-                           COALESCE(active_violations_count, 0) as active_violations_count
-                           FROM users 
-                           WHERE role = "Student" AND deleted_at IS NULL AND COALESCE(active_violations_count, 0) > 0
-                           ORDER BY COALESCE(active_violations_count, 0) DESC, violation_count DESC, name ASC');
-    $stmt->execute([]);
-    $violationAlerts = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+    $svTableCheck = $pdo->query("SHOW TABLES LIKE 'student_violations'")->fetch();
+    if ($svTableCheck) {
+        $violationAlertsSql = '
+            SELECT u.id, u.student_id, u.name, u.email, u.rfid_uid, u.violation_count,
+                   SUM(CASE WHEN sv.status IN ("active","pending_reparation") THEN 1 ELSE 0 END) AS active_violations_count,
+                   SUM(CASE WHEN sv.status = "pending_reparation" THEN 1 ELSE 0 END) AS pending_reparation_count
+            FROM users u
+            JOIN student_violations sv ON sv.user_id = u.id
+            WHERE u.role = "Student"
+              AND u.deleted_at IS NULL
+              AND sv.status IN ("active", "pending_reparation")
+              ' . ($isSuperadminSession ? '' : (' AND ' . $archivedExprU . ' = 0')) . '
+            GROUP BY u.id, u.student_id, u.name, u.email, u.rfid_uid, u.violation_count
+            HAVING active_violations_count > 0
+            ORDER BY active_violations_count DESC, u.violation_count DESC, u.name ASC
+        ';
+        $stmt = $pdo->prepare($violationAlertsSql);
+        $stmt->execute([]);
+        $violationAlerts = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+    } else {
+        $stmt = $pdo->prepare('SELECT id, student_id, name, email, rfid_uid, violation_count, 
+                               COALESCE(active_violations_count, 0) as active_violations_count,
+                               0 AS pending_reparation_count
+                               FROM users 
+                               WHERE role = "Student" AND deleted_at IS NULL AND COALESCE(active_violations_count, 0) > 0 ' . ($isSuperadminSession ? '' : (' AND ' . $archivedExpr . ' = 0')) . '
+                               ORDER BY COALESCE(active_violations_count, 0) DESC, violation_count DESC, name ASC');
+        $stmt->execute([]);
+        $violationAlerts = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+    }
+    // [END TASK 5]
     $violationAlertCount = count($violationAlerts);
 
     // Get violation type summary counts for the notifications section
     $violationTypeSummary = ['minor' => 0, 'major' => 0, 'grave' => 0];
     try {
-        $svTableCheck = $pdo->query("SHOW TABLES LIKE 'student_violations'")->fetch();
         if ($svTableCheck) {
             $typeSumStmt = $pdo->query("SELECT vc.offense_type, COUNT(*) as cnt 
                 FROM student_violations sv 
                 JOIN violation_categories vc ON sv.category_id = vc.id 
-                WHERE sv.status = 'active' 
+                WHERE sv.status IN ('active', 'pending_reparation') 
                 GROUP BY vc.offense_type");
             foreach ($typeSumStmt->fetchAll(\PDO::FETCH_ASSOC) as $row) {
                 $violationTypeSummary[$row['offense_type']] = (int)$row['cnt'];
@@ -173,6 +233,10 @@ try {
     $analyticsTimeline      = ['labels' => [], 'counts' => []];
     $analyticsViolationTrend = ['labels' => [], 'counts' => []];
     $analyticsStats = ['actionsToday' => 0, 'violationsMonth' => 0, 'resolvedMonth' => 0, 'rfidMonth' => 0, 'totalPending' => 0];
+    // [AGENT CHANGE — TASK 5]
+    $analyticsCourseViolations = [];
+    $analyticsStudentRanking = [];
+    // [END TASK 5]
 
     if (($_GET['section'] ?? 'students') === 'analytics') {
         try {
@@ -227,6 +291,31 @@ try {
             $analyticsStats['resolvedMonth']   = (int)$pdo->query("SELECT COUNT(*) FROM audit_logs WHERE action_type IN ('RESOLVE_VIOLATION','RESOLVE_ALL_VIOLATIONS') AND YEAR(created_at)=YEAR(CURDATE()) AND MONTH(created_at)=MONTH(CURDATE())")->fetchColumn();
             $analyticsStats['rfidMonth']       = (int)$pdo->query("SELECT COUNT(*) FROM audit_logs WHERE action_type = 'REGISTER_RFID' AND YEAR(created_at)=YEAR(CURDATE()) AND MONTH(created_at)=MONTH(CURDATE())")->fetchColumn();
             $analyticsStats['totalPending']    = (int)$pdo->query("SELECT COALESCE(SUM(active_violations_count), 0) FROM users WHERE role = 'Student'")->fetchColumn();
+
+            $courseSql = "
+                SELECT COALESCE(NULLIF(TRIM(u.course), ''), 'Unassigned') AS course, COUNT(v.id) AS violation_count
+                FROM violations v
+                INNER JOIN users u ON v.user_id = u.id
+                WHERE v.scanned_at >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+                  AND ' . $archivedExprU . ' = 0
+                GROUP BY COALESCE(NULLIF(TRIM(u.course), ''), 'Unassigned')
+                ORDER BY violation_count DESC, course ASC
+            ";
+            $analyticsCourseViolations = $pdo->query($courseSql)->fetchAll(\PDO::FETCH_ASSOC);
+
+            $rankingSql = "
+                SELECT u.name AS full_name, u.student_id, COALESCE(NULLIF(TRIM(u.course), ''), 'Unassigned') AS course,
+                       'N/A' AS year_level,
+                       COUNT(v.id) AS violation_count, u.id AS user_id
+                FROM violations v
+                INNER JOIN users u ON v.user_id = u.id
+                WHERE v.scanned_at >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+                  AND ' . $archivedExprU . ' = 0
+                GROUP BY u.id, u.name, u.student_id, u.course
+                ORDER BY violation_count DESC, u.name ASC
+                LIMIT 50
+            ";
+            $analyticsStudentRanking = $pdo->query($rankingSql)->fetchAll(\PDO::FETCH_ASSOC);
         } catch (\Exception $analyticsEx) {
             error_log('Analytics data error: ' . $analyticsEx->getMessage());
         }
@@ -674,8 +763,8 @@ $activeSection = $_GET['section'] ?? 'students';
 
         .rfid-scan-orb {
             position: relative;
-            width: 170px;
-            height: 170px;
+            width: clamp(112px, 20vh, 170px);
+            height: clamp(112px, 20vh, 170px);
             border-radius: 999px;
             background: radial-gradient(circle at 30% 28%, rgba(255,255,255,0.95), rgba(14,165,233,0.18));
             border: 1px solid rgba(148, 163, 184, 0.35);
@@ -702,13 +791,28 @@ $activeSection = $_GET['section'] ?? 'students';
         }
 
         .rfid-scan-logo {
-            width: 92px;
-            height: 92px;
+            width: clamp(62px, 11vh, 92px);
+            height: clamp(62px, 11vh, 92px);
             border-radius: 999px;
             object-fit: cover;
             box-shadow: 0 10px 26px rgba(15, 23, 42, 0.24);
             position: relative;
             z-index: 2;
+        }
+
+        @media (max-height: 860px) {
+            #cardModal .glass-card {
+                border-radius: 1.5rem;
+            }
+
+            #cardModal .rfid-scan-orb {
+                margin-bottom: 0.75rem;
+            }
+
+            #cardModal h3 {
+                font-size: clamp(1.85rem, 4.2vw, 2.4rem);
+                line-height: 1.1;
+            }
         }
 
         .rfid-input-glass {
@@ -796,6 +900,25 @@ $activeSection = $_GET['section'] ?? 'students';
             color: white;
             font-size: 2.8rem;
             font-weight: 700;
+        }
+
+        /* Custom scrollbar for Card Registration Modal */
+        #cardModal > div::-webkit-scrollbar {
+            width: 5px;
+        }
+        #cardModal > div::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        #cardModal > div::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.35);
+            border-radius: 999px;
+        }
+        #cardModal > div::-webkit-scrollbar-thumb:hover {
+            background: rgba(148, 163, 184, 0.55);
+        }
+        #cardModal > div {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
         }
     </style>
 </head>
@@ -886,12 +1009,14 @@ $activeSection = $_GET['section'] ?? 'students';
                     </div>
                 </a>
 
+                <?php if ($isSuperadminSession): ?>
                 <a href="?section=audit" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-colors <?php echo $activeSection === 'audit' ? 'bg-sky-100/70 text-sky-700 font-semibold' : 'text-slate-600 hover:bg-white/60'; ?>">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                     </svg>
                     <span class="font-medium">Audit Log</span>
                 </a>
+                <?php endif; ?>
 
                 <a href="?section=rfid_checker" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-colors <?php echo $activeSection === 'rfid_checker' ? 'bg-sky-100/70 text-sky-700 font-semibold' : 'text-slate-600 hover:bg-white/60'; ?>">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1140,10 +1265,10 @@ $activeSection = $_GET['section'] ?? 'students';
                                         </button>
                                     <?php endif; ?>
                                     <button 
-                                        onclick="confirmDelete('<?php echo htmlspecialchars($student['id']); ?>')"
-                                        class="px-4 py-2 bg-red-500 text-white rounded-lg btn-hover text-sm"
+                                        onclick="confirmArchive('<?php echo htmlspecialchars($student['id']); ?>', this)"
+                                        class="px-4 py-2 bg-slate-500 text-white rounded-lg btn-hover text-sm"
                                     >
-                                        Delete
+                                        Archive
                                     </button>
                                 </div>
                             </div>
@@ -1323,7 +1448,7 @@ $activeSection = $_GET['section'] ?? 'students';
                                     </div>
                                     <div class="flex flex-row md:flex-col gap-2 mt-4 md:mt-0 md:ml-4">
                                         <button 
-                                            onclick="openEditStudentModal('<?php echo htmlspecialchars($student['id']); ?>', '<?php echo htmlspecialchars($student['name']); ?>', '<?php echo htmlspecialchars($student['student_id']); ?>', '<?php echo htmlspecialchars($student['email']); ?>', '<?php echo htmlspecialchars($student['profile_picture'] ?? ''); ?>', '<?php echo htmlspecialchars($student['course'] ?? ''); ?>')"
+                                            onclick="openEditStudentModal('<?php echo htmlspecialchars($student['id']); ?>', '<?php echo htmlspecialchars($student['name']); ?>', '<?php echo htmlspecialchars($student['student_id']); ?>', '<?php echo htmlspecialchars($student['email']); ?>', '<?php echo htmlspecialchars($student['profile_picture'] ?? ''); ?>', '<?php echo htmlspecialchars($student['course'] ?? ''); ?>', '<?php echo htmlspecialchars($student['dob'] ?? ''); ?>')"
                                             class="px-4 py-2 bg-indigo-500 text-white rounded-lg btn-hover text-sm whitespace-nowrap"
                                         >
                                             Edit
@@ -1398,7 +1523,7 @@ $activeSection = $_GET['section'] ?? 'students';
                         <div>
                             <p class="text-xs font-bold uppercase tracking-wider text-amber-700">Minor Offenses</p>
                             <p class="text-2xl font-bold text-slate-800 mt-1"><?php echo $violationTypeSummary['minor']; ?></p>
-                            <p class="text-xs text-slate-500">Active violations</p>
+                            <p class="text-xs text-slate-500">Unresolved violations</p>
                         </div>
                         <div class="bg-amber-100 p-3 rounded-full">
                             <svg class="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1412,7 +1537,7 @@ $activeSection = $_GET['section'] ?? 'students';
                         <div>
                             <p class="text-xs font-bold uppercase tracking-wider text-orange-700">Major Offenses</p>
                             <p class="text-2xl font-bold text-slate-800 mt-1"><?php echo $violationTypeSummary['major']; ?></p>
-                            <p class="text-xs text-slate-500">Active violations</p>
+                            <p class="text-xs text-slate-500">Unresolved violations</p>
                         </div>
                         <div class="bg-orange-100 p-3 rounded-full">
                             <svg class="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1426,7 +1551,7 @@ $activeSection = $_GET['section'] ?? 'students';
                         <div>
                             <p class="text-xs font-bold uppercase tracking-wider text-red-700">Grave Offenses</p>
                             <p class="text-2xl font-bold text-slate-800 mt-1"><?php echo $violationTypeSummary['grave']; ?></p>
-                            <p class="text-xs text-slate-500">Active violations</p>
+                            <p class="text-xs text-slate-500">Unresolved violations</p>
                         </div>
                         <div class="bg-red-100 p-3 rounded-full">
                             <svg class="w-6 h-6 text-red-600" fill="currentColor" viewBox="0 0 20 20">
@@ -1445,8 +1570,8 @@ $activeSection = $_GET['section'] ?? 'students';
                             <svg class="w-16 h-16 mx-auto text-green-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                             </svg>
-                            <p class="text-slate-600 font-medium">No violation alerts at this time</p>
-                            <p class="text-slate-500 text-sm mt-1">All students are within acceptable violation limits</p>
+                            <p class="text-slate-600 font-medium">No unresolved violation alerts at this time</p>
+                            <p class="text-slate-500 text-sm mt-1">All students with violations are fully resolved</p>
                         </div>
                     <?php else: ?>
                         <div class="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
@@ -1454,8 +1579,8 @@ $activeSection = $_GET['section'] ?? 'students';
                                 <svg class="w-5 h-5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
                                     <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
                                 </svg>
-                                <span class="text-red-800 font-semibold"><?php echo $violationAlertCount; ?> student<?php echo $violationAlertCount !== 1 ? 's' : ''; ?> with active violations</span>
-                                <span class="text-red-600 text-sm ml-2">(<?php echo $totalActiveViolations; ?> total active offenses)</span>
+                                <span class="text-red-800 font-semibold"><?php echo $violationAlertCount; ?> student<?php echo $violationAlertCount !== 1 ? 's' : ''; ?> with unresolved violations</span>
+                                <span class="text-red-600 text-sm ml-2">(<?php echo $totalActiveViolations; ?> total unresolved offenses)</span>
                             </div>
                         </div>
 
@@ -1479,7 +1604,12 @@ $activeSection = $_GET['section'] ?? 'students';
                                             <div class="flex gap-2">
                                                 <?php if ($student['active_violations_count'] > 0): ?>
                                                 <span class="bg-red-500 text-white text-xs font-bold px-3 py-1 rounded-full">
-                                                    <?php echo $student['active_violations_count']; ?> Active
+                                                    <?php echo (int)$student['active_violations_count']; ?> Unresolved
+                                                </span>
+                                                <?php endif; ?>
+                                                <?php if ((int)($student['pending_reparation_count'] ?? 0) > 0): ?>
+                                                <span class="bg-amber-500 text-white text-xs font-bold px-3 py-1 rounded-full">
+                                                    <?php echo (int)$student['pending_reparation_count']; ?> Pending
                                                 </span>
                                                 <?php endif; ?>
                                                 <!-- Gate Strikes removed: system no longer uses "strikes" terminology -->
@@ -1582,7 +1712,11 @@ $activeSection = $_GET['section'] ?? 'students';
                 <h1 class="text-2xl font-bold text-slate-800">Analytics</h1>
                 <p class="text-slate-500 mt-1 text-sm">Real-time overview of admin activity &amp; gate violations</p>
             </div>
-            <div>
+            <div class="flex items-center gap-2 flex-wrap justify-end">
+                <!-- [AGENT CHANGE — TASK 5] -->
+                <input type="date" id="analyticsDateFrom" class="text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Analytics date from">
+                <input type="date" id="analyticsDateTo" class="text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Analytics date to">
+                <!-- [END TASK 5] -->
                 <select id="analyticsPeriod" class="text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer" style="padding-right:2.2rem;background-image:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 fill=%22none%22 viewBox=%220 0 24 24%22 stroke=%22%2394a3b8%22 stroke-width=%222%22%3E%3Cpath stroke-linecap=%22round%22 stroke-linejoin=%22round%22 d=%22M19 9l-7 7-7-7%22/%3E%3C/svg%3E');background-repeat:no-repeat;background-position:right 0.6rem center;background-size:1rem;appearance:none;-webkit-appearance:none;">
                     <option value="today">Today</option>
                     <option value="week">This Week</option>
@@ -1662,17 +1796,54 @@ $activeSection = $_GET['section'] ?? 'students';
             </div>
         </div>
 
+        <!-- [AGENT CHANGE — TASK 5] -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+            <div class="glass-card rounded-2xl p-6">
+                <h2 class="text-base font-semibold text-slate-800 mb-1">Violations by Course</h2>
+                <p class="text-xs text-slate-400 mb-4">Filtered by selected date range / period</p>
+                <div style="position:relative;height:260px;">
+                    <canvas id="chartViolationsByCourse"></canvas>
+                </div>
+            </div>
+            <div class="glass-card rounded-2xl p-6">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-base font-semibold text-slate-800">Student Violation Ranking</h2>
+                    <button id="rankingToggleBtn" type="button" class="text-xs px-3 py-1 rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200">Show all</button>
+                </div>
+                <div class="overflow-auto max-h-[300px]">
+                    <table class="min-w-full text-sm">
+                        <thead class="text-slate-500 border-b border-slate-200">
+                            <tr>
+                                <th class="text-left py-2 pr-3">Rank</th>
+                                <th class="text-left py-2 pr-3">Student Name</th>
+                                <th class="text-left py-2 pr-3">Student ID</th>
+                                <th class="text-left py-2 pr-3">Course</th>
+                                <th class="text-left py-2 pr-3">Year</th>
+                                <th class="text-left py-2">Violations</th>
+                            </tr>
+                        </thead>
+                        <tbody id="studentRankingBody" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <!-- [END TASK 5] -->
+
         <input type="hidden" id="analyticsInitData" value="<?php echo htmlspecialchars(json_encode([
             'actionCounts' => (object)$analyticsActionCounts,
             'timeline' => $analyticsTimeline,
             'violationTrend' => $analyticsViolationTrend,
-            'stats' => $analyticsStats
+            'stats' => $analyticsStats,
+            'courseViolations' => $analyticsCourseViolations,
+            'studentRanking' => $analyticsStudentRanking
         ]), ENT_QUOTES); ?>">
         <script>
         (function () {
             const _csrf = document.body?.dataset?.csrfToken || '';
 
             const initData = JSON.parse(document.getElementById('analyticsInitData')?.value || '{}');
+            const dateFromInput = document.getElementById('analyticsDateFrom');
+            const dateToInput = document.getElementById('analyticsDateTo');
 
             const ACTION_LABELS = {
                 APPROVE_STUDENT:        'Approve Student',
@@ -1682,6 +1853,7 @@ $activeSection = $_GET['section'] ?? 'students';
                 MARK_LOST:              'Mark Lost',
                 MARK_FOUND:             'Mark Found',
                 UPDATE_STUDENT:         'Update Student',
+                ARCHIVE_STUDENT:        'Archive Student',
                 DELETE_STUDENT:         'Delete Student',
                 RESOLVE_VIOLATION:      'Resolve Violation',
                 RESOLVE_ALL_VIOLATIONS: 'Resolve All Violations',
@@ -1695,6 +1867,7 @@ $activeSection = $_GET['section'] ?? 'students';
                 MARK_LOST:              'rgba(249,115,22,0.82)',
                 MARK_FOUND:             'rgba(20,184,166,0.82)',
                 UPDATE_STUDENT:         'rgba(99,102,241,0.82)',
+                ARCHIVE_STUDENT:        'rgba(100,116,139,0.82)',
                 DELETE_STUDENT:         'rgba(244,63,94,0.82)',
                 RESOLVE_VIOLATION:      'rgba(16,185,129,0.82)',
                 RESOLVE_ALL_VIOLATIONS: 'rgba(5,150,105,0.82)',
@@ -1827,6 +2000,67 @@ $activeSection = $_GET['section'] ?? 'students';
                 }
             });
 
+            // [AGENT CHANGE — TASK 5]
+            const courseCtx = document.getElementById('chartViolationsByCourse')?.getContext('2d');
+            const initialCourseRows = Array.isArray(initData.courseViolations) ? initData.courseViolations : [];
+            const chartCourse = courseCtx ? new Chart(courseCtx, {
+                type: 'bar',
+                data: {
+                    labels: initialCourseRows.map(r => String(r.course || 'Unassigned')),
+                    datasets: [{
+                        data: initialCourseRows.map(r => Number(r.violation_count || 0)),
+                        backgroundColor: 'rgba(59,130,246,0.82)',
+                        borderRadius: 6,
+                        borderSkipped: false,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { grid: { display: false }, border: { display: false } },
+                        y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: 'rgba(148,163,184,0.1)' }, border: { display: false } }
+                    }
+                }
+            }) : null;
+
+            let rankingExpanded = false;
+            const rankingBody = document.getElementById('studentRankingBody');
+            const rankingToggleBtn = document.getElementById('rankingToggleBtn');
+
+            const renderStudentRanking = (rows) => {
+                if (!rankingBody) return;
+                const safeRows = Array.isArray(rows) ? rows : [];
+                const visibleRows = rankingExpanded ? safeRows : safeRows.slice(0, 50);
+                rankingBody.innerHTML = visibleRows.map((row, idx) => {
+                    const rank = idx + 1;
+                    const nameHtml = escapeHtml(String(row.full_name || 'Unknown'));
+                    return `
+                        <tr class="text-slate-700">
+                            <td class="py-2 pr-3 font-semibold">${rank}</td>
+                            <td class="py-2 pr-3">${nameHtml}</td>
+                            <td class="py-2 pr-3">${escapeHtml(String(row.student_id || ''))}</td>
+                            <td class="py-2 pr-3">${escapeHtml(String(row.course || 'Unassigned'))}</td>
+                            <td class="py-2 pr-3">${escapeHtml(String(row.year_level || 'N/A'))}</td>
+                            <td class="py-2 font-semibold">${Number(row.violation_count || 0)}</td>
+                        </tr>
+                    `;
+                }).join('') || '<tr><td colspan="6" class="py-4 text-slate-500">No violation ranking data found for this filter.</td></tr>';
+                if (rankingToggleBtn) {
+                    rankingToggleBtn.textContent = rankingExpanded ? 'Show top 50' : 'Show all';
+                }
+            };
+
+            if (rankingToggleBtn) {
+                rankingToggleBtn.addEventListener('click', () => {
+                    rankingExpanded = !rankingExpanded;
+                    renderStudentRanking(window.__analyticsStudentRankingRows || []);
+                });
+            }
+            window.__analyticsStudentRankingRows = Array.isArray(initData.studentRanking) ? initData.studentRanking : [];
+            renderStudentRanking(window.__analyticsStudentRankingRows);
+            // [END TASK 5]
+
             // ── Stat card updater ─────────────────────────────────────────────
             function updateStatCards(s) {
                 document.getElementById('statActionsToday').textContent    = s.actionsToday.toLocaleString();
@@ -1856,7 +2090,10 @@ $activeSection = $_GET['section'] ?? 'students';
             async function refreshAnalytics(period) {
                 period = period || currentPeriod;
                 try {
-                    const r = await fetch('analytics_data.php?period=' + period, { headers: { 'X-CSRF-Token': _csrf } });
+                    const params = new URLSearchParams({ period: period });
+                    if (dateFromInput?.value) params.set('date_from', dateFromInput.value);
+                    if (dateToInput?.value) params.set('date_to', dateToInput.value);
+                    const r = await fetch('analytics_data.php?' + params.toString(), { headers: { 'X-CSRF-Token': _csrf } });
                     if (!r.ok) return;
                     const d = await r.json();
                     if (!d.success) return;
@@ -1878,6 +2115,17 @@ $activeSection = $_GET['section'] ?? 'students';
                     chartLine.data.datasets[0].data = d.timeline.counts;
                     chartLine.data.datasets[1].data = d.violationTrend.counts;
                     chartLine.update('active');
+
+                    // [AGENT CHANGE — TASK 5]
+                    if (chartCourse) {
+                        const rows = Array.isArray(d.courseViolations) ? d.courseViolations : [];
+                        chartCourse.data.labels = rows.map(row => String(row.course || 'Unassigned'));
+                        chartCourse.data.datasets[0].data = rows.map(row => Number(row.violation_count || 0));
+                        chartCourse.update('none');
+                    }
+                    window.__analyticsStudentRankingRows = Array.isArray(d.studentRanking) ? d.studentRanking : [];
+                    renderStudentRanking(window.__analyticsStudentRankingRows);
+                    // [END TASK 5]
                 } catch (e) { console.warn('Analytics refresh:', e); }
             }
 
@@ -1886,6 +2134,8 @@ $activeSection = $_GET['section'] ?? 'students';
                 updateSubtitles(this.value);
                 refreshAnalytics(this.value);
             });
+            if (dateFromInput) dateFromInput.addEventListener('change', () => refreshAnalytics(currentPeriod));
+            if (dateToInput) dateToInput.addEventListener('change', () => refreshAnalytics(currentPeriod));
 
             updateSubtitles('month');
             setInterval(() => refreshAnalytics(currentPeriod), 30000);
@@ -1927,7 +2177,8 @@ $activeSection = $_GET['section'] ?? 'students';
                             <option value="MARK_LOST">Mark Lost</option>
                             <option value="MARK_FOUND">Mark Found</option>
                             <option value="UPDATE_STUDENT">Update Student</option>
-                            <option value="DELETE_STUDENT">Delete Student</option>
+                            <option value="ARCHIVE_STUDENT">Archive Student</option>
+                            <option value="DELETE_STUDENT">Delete Student (Legacy)</option>
                             <option value="RESOLVE_VIOLATION">Resolve Violation</option>
                             <option value="RESOLVE_ALL_VIOLATIONS">Resolve All Violations</option>
                             <option value="ASSIGN_REPARATION">Assign Reparation</option>
@@ -1999,6 +2250,7 @@ $activeSection = $_GET['section'] ?? 'students';
                                         'MARK_LOST' => 'bg-orange-100 text-orange-800',
                                         'MARK_FOUND' => 'bg-emerald-100 text-emerald-800',
                                         'UPDATE_STUDENT' => 'bg-indigo-100 text-indigo-800',
+                                        'ARCHIVE_STUDENT' => 'bg-slate-100 text-slate-800',
                                         'DELETE_STUDENT' => 'bg-red-100 text-red-800',
                                         'ADD_VIOLATION' => 'bg-rose-100 text-rose-800',
                                         'RESOLVE_VIOLATION' => 'bg-teal-100 text-teal-800',
@@ -2407,17 +2659,17 @@ $activeSection = $_GET['section'] ?? 'students';
 </div>
 
 <!-- Card Registration Modal -->
-<div id="cardModal" class="fixed inset-0 bg-slate-900/35 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
-    <div class="glass-card rounded-[2rem] p-6 sm:p-8 max-w-md w-full fade-in border border-white/60 shadow-[0_26px_65px_rgba(15,23,42,0.24)]">
+<div id="cardModal" class="fixed inset-0 bg-slate-900/35 backdrop-blur-sm hidden items-start sm:items-center justify-center z-50 p-3 sm:p-4 overflow-y-auto">
+    <div class="glass-card rounded-[2rem] p-4 sm:p-6 lg:p-8 max-w-md w-full my-3 sm:my-6 fade-in border border-white/60 shadow-[0_26px_65px_rgba(15,23,42,0.24)] max-h-[calc(100vh-1.5rem)] sm:max-h-[calc(100vh-2rem)] overflow-y-auto">
         <div>
             <div class="rfid-scan-orb mb-4">
                 <span class="rfid-scan-ring" aria-hidden="true"></span>
                 <img src="../assets/images/gatewatch-logo.png" alt="Gatewatch" class="rfid-scan-logo">
             </div>
             <h3 class="text-3xl sm:text-4xl font-black tracking-tight text-slate-700 text-center">RFID Registration</h3>
-            <p class="text-slate-600 mt-2 mb-6 text-center">Step 1: Confirm student details before scanning card.</p>
+            <p class="text-slate-600 mt-2 mb-4 sm:mb-6 text-center">Step 1: Confirm student details before scanning card.</p>
 
-            <div id="rfidPrecheckPanel" class="space-y-4">
+            <div id="rfidPrecheckPanel" class="space-y-3 sm:space-y-4">
                 <div>
                     <label for="rfidCourseInput" class="block text-sm font-medium text-slate-700 mb-1">Course</label>
                     <div class="relative">
@@ -2531,7 +2783,7 @@ $activeSection = $_GET['section'] ?? 'students';
                 </div>
             </div>
 
-            <button id="rfidPrecheckCancelBtn" onclick="closeCardModal()" class="mt-6 px-4 py-2 text-slate-600 hover:text-slate-800 font-medium w-full">
+            <button id="rfidPrecheckCancelBtn" onclick="closeCardModal()" class="mt-4 sm:mt-6 px-4 py-2 text-slate-600 hover:text-slate-800 font-medium w-full">
                 Cancel
             </button>
         </div>
@@ -2797,6 +3049,13 @@ $activeSection = $_GET['section'] ?? 'students';
                                class="w-full h-11 px-4 rounded-lg border-2 border-slate-200 bg-white text-slate-800 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 focus:outline-none">
                         <p class="text-xs text-slate-500 mt-1">Replace temporary ID with the real ID. Student ID must be exactly 9 digits.</p>
                         <div id="editStudentIdRealtimeResult" class="text-xs mt-2 px-3 py-2 rounded-lg bg-slate-100 text-slate-600">Student ID must be exactly 9 digits and not already taken.</div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Date of Birth</label>
+                        <input type="date" id="editStudentDob" readonly
+                               class="w-full h-11 px-4 rounded-lg border-2 border-slate-200 bg-slate-100 text-slate-600 cursor-not-allowed">
+                        <p class="text-xs text-slate-500 mt-1">DOB is read-only for admins. Superadmin changes trigger account review.</p>
                     </div>
                     
                     <div>
@@ -3789,28 +4048,28 @@ function toggleGuardianNotifications(enabled) {
     });
 }
 
-function confirmDelete(studentId) {
+function confirmArchive(studentId, sourceEl) {
     // Get student name from the DOM for better UX
-    const studentCard = event.target.closest('.bg-white');
+    const studentCard = sourceEl ? sourceEl.closest('.bg-slate-50, .bg-white') : null;
     const studentName = studentCard?.querySelector('h3')?.textContent || 'this student';
     
     showConfirmModal({
-        title: `Delete account for ${studentName}?`,
-        message: '⚠️ WARNING: This action cannot be undone!',
+        title: `Archive ${studentName}?`,
+        message: 'This action will hide the account from admin view and unlink the RFID tag.',
         items: [
-            'Permanently delete account',
-            'Remove all student data',
-            'Cannot be recovered'
+            'Student account will be archived (not deleted)',
+            'RFID tag will be unlinked and made available for reassignment',
+            'Student record is retained for audit/history'
         ],
-        confirmText: 'Delete',
+        confirmText: 'Archive',
         cancelText: 'Cancel',
-        confirmClass: 'bg-red-600 hover:bg-red-700',
-        onConfirm: () => executeDelete(studentId, studentName)
+        confirmClass: 'bg-slate-600 hover:bg-slate-700',
+        onConfirm: () => executeArchive(studentId, studentName)
     });
 }
 
-function executeDelete(studentId, studentName) {
-    showToast('Deleting account...', 'warning', 0);
+function executeArchive(studentId, studentName) {
+    showToast('Archiving account...', 'warning', 0);
     
     fetch('delete_account.php', {
         method: 'POST',
@@ -3825,17 +4084,17 @@ function executeDelete(studentId, studentName) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            showToast('Account deleted successfully', 'success', 600);
+            showToast('Student archived successfully', 'success', 900);
             setTimeout(() => {
                 location.reload();
-            }, 600);
+            }, 900);
         } else {
-            showToast(data.error || 'Failed to delete account', 'error');
+            showToast(data.error || 'Failed to archive account', 'error');
         }
     })
     .catch(error => {
         console.error('Error:', error);
-        showToast('Failed to delete account', 'error');
+        showToast('Failed to archive account', 'error');
     });
 }
 
@@ -5164,7 +5423,7 @@ async function validateEditStudentIdRealtime(options = {}) {
     }
 }
 
-function openEditStudentModal(userId, name, studentId, email, profilePicture, course) {
+function openEditStudentModal(userId, name, studentId, email, profilePicture, course, dob) {
     resetEditStudentIdValidationState();
 
     // Set form values
@@ -5172,6 +5431,7 @@ function openEditStudentModal(userId, name, studentId, email, profilePicture, co
     document.getElementById('editStudentName').value = name;
     document.getElementById('editStudentId').value = studentId;
     document.getElementById('editStudentEmail').value = email;
+    document.getElementById('editStudentDob').value = dob || '';
 
     const editStudentIdInput = document.getElementById('editStudentId');
     const initialStudentId = (editStudentIdInput?.value || '').trim();
@@ -5363,7 +5623,8 @@ async function saveStudentInfo() {
                 user_id: userId,
                 name: name,
                 student_id: studentId,
-                course: course
+                course: course,
+                dob: document.getElementById('editStudentDob')?.value || ''
             })
         });
         
@@ -5845,6 +6106,7 @@ function updateAuditTable(logs) {
         'MARK_LOST': 'bg-orange-100 text-orange-800',
         'MARK_FOUND': 'bg-emerald-100 text-emerald-800',
         'UPDATE_STUDENT': 'bg-indigo-100 text-indigo-800',
+        'ARCHIVE_STUDENT': 'bg-slate-100 text-slate-800',
         'DELETE_STUDENT': 'bg-red-100 text-red-800',
         'ADD_VIOLATION': 'bg-rose-100 text-rose-800',
         'RESOLVE_VIOLATION': 'bg-teal-100 text-teal-800',

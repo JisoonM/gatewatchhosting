@@ -96,6 +96,9 @@ if (!jwt_parts_are_valid($jwt_token)) {
 
 try {
     $pdo = pdo();
+    $hasQrIdentityTokenColumn = db_column_exists('users', 'qr_identity_token');
+    $hasArchivedColumn = db_column_exists('users', 'is_archived');
+    $archivedExpr = $hasArchivedColumn ? 'COALESCE(is_archived, 0)' : '0';
     ensure_security_scan_tokens_table($pdo);
     $jwt_secret = get_jwt_secret();
     $challengeEnabled = filter_var(env('QR_CHALLENGE_ENABLED', 'false'), FILTER_VALIDATE_BOOLEAN);
@@ -284,12 +287,41 @@ try {
         $challengeRowId = (int)$challenge['id'];
     }
 
-    // Extract student info from token
-    $student_id = $decoded->student_id ?? null;
-    $name = $decoded->name ?? null;
-    $email = $decoded->email ?? null;
-    
-    if (!$student_id || !$email) {
+    // [AGENT CHANGE — TASK 1]
+    // Prefer compact non-guessable identity token from QR payload.
+    $identityToken = trim((string)($decoded->identity_token ?? ''));
+    $legacyStudentId = trim((string)($decoded->student_id ?? ''));
+    $legacyEmail = trim((string)($decoded->email ?? ''));
+
+    $student = null;
+    if ($identityToken !== '' && $hasQrIdentityTokenColumn) {
+        $stmt = $pdo->prepare('
+            SELECT id, student_id, name, email, course,
+                   COALESCE(violation_count, 0)         AS violation_count,
+                   COALESCE(active_violations_count, 0) AS active_violations_count,
+                   COALESCE(gate_mark_count, 0)         AS gate_mark_count,
+                   profile_picture, status, created_at, ' . $archivedExpr . ' AS is_archived
+            FROM users
+            WHERE qr_identity_token = ? AND role = "Student"
+            LIMIT 1
+        ');
+        $stmt->execute([$identityToken]);
+        $student = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    } elseif ($legacyStudentId !== '' && $legacyEmail !== '') {
+        // Backward-safe fallback while older tokens naturally expire.
+        $stmt = $pdo->prepare('
+            SELECT id, student_id, name, email, course,
+                   COALESCE(violation_count, 0)         AS violation_count,
+                   COALESCE(active_violations_count, 0) AS active_violations_count,
+                   COALESCE(gate_mark_count, 0)         AS gate_mark_count,
+                   profile_picture, status, created_at, ' . $archivedExpr . ' AS is_archived
+            FROM users
+            WHERE student_id = ? AND email = ? AND role = "Student"
+            LIMIT 1
+        ');
+        $stmt->execute([$legacyStudentId, $legacyEmail]);
+        $student = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    } else {
         echo json_encode([
             'success' => false,
             'error' => 'INVALID_TOKEN_DATA',
@@ -298,20 +330,7 @@ try {
         ]);
         exit;
     }
-    
-    // Verify student exists in database
-    $stmt = $pdo->prepare('
-        SELECT id, student_id, name, email, course,
-               COALESCE(violation_count, 0)         AS violation_count,
-               COALESCE(active_violations_count, 0) AS active_violations_count,
-               COALESCE(gate_mark_count, 0)         AS gate_mark_count,
-               profile_picture, status, created_at
-        FROM users
-        WHERE student_id = ? AND email = ? AND role = "Student"
-        LIMIT 1
-    ');
-    $stmt->execute([$student_id, $email]);
-    $student = $stmt->fetch(PDO::FETCH_ASSOC);
+    // [END TASK 1]
 
     if (!$student) {
         echo json_encode([
@@ -324,7 +343,7 @@ try {
     }
 
     // Check if student account is active
-    if (($student['status'] ?? '') !== 'Active') {
+    if ((int)($student['is_archived'] ?? 0) === 1 || ($student['status'] ?? '') !== 'Active') {
         echo json_encode([
             'success' => false,
             'error' => 'ACCOUNT_INACTIVE',
@@ -355,7 +374,7 @@ try {
                COALESCE(violation_count, 0)         AS violation_count,
                COALESCE(active_violations_count, 0) AS active_violations_count,
                COALESCE(gate_mark_count, 0)         AS gate_mark_count,
-               profile_picture, status
+               profile_picture, status, ' . $archivedExpr . ' AS is_archived
         FROM users
         WHERE id = ? AND role = "Student"
         LIMIT 1

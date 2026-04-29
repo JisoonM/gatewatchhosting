@@ -36,36 +36,95 @@ if (empty($csrfHeader) || !hash_equals($_SESSION['csrf_token'] ?? '', $csrfHeade
 $allowed = ['today', 'week', 'month', 'year'];
 $period  = in_array($_GET['period'] ?? '', $allowed) ? $_GET['period'] : 'month';
 
+// [AGENT CHANGE — TASK 5]
+$dateFromRaw = trim((string)($_GET['date_from'] ?? ''));
+$dateToRaw = trim((string)($_GET['date_to'] ?? ''));
+$dateFrom = null;
+$dateTo = null;
+if ($dateFromRaw !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateFromRaw)) {
+    $dateFrom = $dateFromRaw;
+}
+if ($dateToRaw !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateToRaw)) {
+    $dateTo = $dateToRaw;
+}
+if ($dateFrom !== null && $dateTo !== null && strtotime($dateFrom) > strtotime($dateTo)) {
+    [$dateFrom, $dateTo] = [$dateTo, $dateFrom];
+}
+// [END TASK 5]
+
 try {
     $pdo = pdo();
+    // [AGENT CHANGE — TASK 5]
+    $hasArchivedColumn = db_column_exists('users', 'is_archived');
+    $archivedExprU = $hasArchivedColumn ? 'COALESCE(u.is_archived, 0)' : '0';
+    // [END TASK 5]
 
     // Date conditions per period
+    $auditCondParams = [];
+    $svCondParams = [];
+    $scanCondParams = [];
     switch ($period) {
         case 'today':
-            $auditCond = "DATE(created_at) = CURDATE()";
-            $svCond    = "DATE(created_at) = CURDATE()";
-            $scanCond  = "DATE(scanned_at) = CURDATE()";
+            $auditCond = "DATE(created_at) = ?";
+            $svCond    = "DATE(created_at) = ?";
+            $scanCond  = "DATE(scanned_at) = ?";
+            $today = date('Y-m-d');
+            $auditCondParams[] = $today;
+            $svCondParams[] = $today;
+            $scanCondParams[] = $today;
             break;
         case 'week':
-            $auditCond = "created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)";
-            $svCond    = "created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)";
-            $scanCond  = "scanned_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)";
+            $from = date('Y-m-d', strtotime('-6 days'));
+            $auditCond = "DATE(created_at) >= ?";
+            $svCond    = "DATE(created_at) >= ?";
+            $scanCond  = "DATE(scanned_at) >= ?";
+            $auditCondParams[] = $from;
+            $svCondParams[] = $from;
+            $scanCondParams[] = $from;
             break;
         case 'year':
-            $auditCond = "YEAR(created_at) = YEAR(CURDATE())";
-            $svCond    = "YEAR(created_at) = YEAR(CURDATE())";
-            $scanCond  = "YEAR(scanned_at) = YEAR(CURDATE())";
+            $year = date('Y');
+            $auditCond = "YEAR(created_at) = ?";
+            $svCond    = "YEAR(created_at) = ?";
+            $scanCond  = "YEAR(scanned_at) = ?";
+            $auditCondParams[] = $year;
+            $svCondParams[] = $year;
+            $scanCondParams[] = $year;
             break;
         default: // month
-            $auditCond = "YEAR(created_at) = YEAR(CURDATE()) AND MONTH(created_at) = MONTH(CURDATE())";
-            $svCond    = "YEAR(created_at) = YEAR(CURDATE()) AND MONTH(created_at) = MONTH(CURDATE())";
-            $scanCond  = "YEAR(scanned_at) = YEAR(CURDATE()) AND MONTH(scanned_at) = MONTH(CURDATE())";
+            $year = date('Y');
+            $month = date('m');
+            $auditCond = "YEAR(created_at) = ? AND MONTH(created_at) = ?";
+            $svCond    = "YEAR(created_at) = ? AND MONTH(created_at) = ?";
+            $scanCond  = "YEAR(scanned_at) = ? AND MONTH(scanned_at) = ?";
+            $auditCondParams[] = $year; $auditCondParams[] = $month;
+            $svCondParams[] = $year; $svCondParams[] = $month;
+            $scanCondParams[] = $year; $scanCondParams[] = $month;
             break;
     }
 
+    // [AGENT CHANGE — TASK 5]
+    if ($dateFrom !== null) {
+        $auditCond .= " AND DATE(created_at) >= ?";
+        $svCond .= " AND DATE(created_at) >= ?";
+        $scanCond .= " AND DATE(scanned_at) >= ?";
+        $auditCondParams[] = $dateFrom;
+        $svCondParams[] = $dateFrom;
+        $scanCondParams[] = $dateFrom;
+    }
+    if ($dateTo !== null) {
+        $auditCond .= " AND DATE(created_at) <= ?";
+        $svCond .= " AND DATE(created_at) <= ?";
+        $scanCond .= " AND DATE(scanned_at) <= ?";
+        $auditCondParams[] = $dateTo;
+        $svCondParams[] = $dateTo;
+        $scanCondParams[] = $dateTo;
+    }
+    // [END TASK 5]
+
     // ── Action type counts (last 30 days) ─────────────────────────────────
     $actionCounts = [];
-    $stmt = $pdo->query("
+    $stmt = $pdo->prepare("
         SELECT action_type, COUNT(*) AS cnt
         FROM audit_logs
         WHERE action_type != 'EXPORT_AUDIT_LOG'
@@ -73,6 +132,7 @@ try {
         GROUP BY action_type
         ORDER BY cnt DESC
     ");
+    $stmt->execute($auditCondParams);
     while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
         $actionCounts[$row['action_type']] = (int)$row['cnt'];
     }
@@ -189,11 +249,50 @@ try {
     }
 
     // ── Stat cards ────────────────────────────────────────────────────────
-    $actionsCount    = (int)$pdo->query("SELECT COUNT(*) FROM audit_logs WHERE {$auditCond}")->fetchColumn();
-    $violationsCount = (int)$pdo->query("SELECT COUNT(*) FROM student_violations WHERE {$svCond}")->fetchColumn();
-    $resolvedCount   = (int)$pdo->query("SELECT COUNT(*) FROM audit_logs WHERE action_type IN ('RESOLVE_VIOLATION','RESOLVE_ALL_VIOLATIONS') AND {$auditCond}")->fetchColumn();
-    $rfidCount       = (int)$pdo->query("SELECT COUNT(*) FROM audit_logs WHERE action_type = 'REGISTER_RFID' AND {$auditCond}")->fetchColumn();
+    $countStmt = $pdo->prepare("SELECT COUNT(*) FROM audit_logs WHERE {$auditCond}");
+    $countStmt->execute($auditCondParams);
+    $actionsCount = (int)$countStmt->fetchColumn();
+
+    $violStmt = $pdo->prepare("SELECT COUNT(*) FROM student_violations WHERE {$svCond}");
+    $violStmt->execute($svCondParams);
+    $violationsCount = (int)$violStmt->fetchColumn();
+
+    $resolvedStmt = $pdo->prepare("SELECT COUNT(*) FROM audit_logs WHERE action_type IN ('RESOLVE_VIOLATION','RESOLVE_ALL_VIOLATIONS') AND {$auditCond}");
+    $resolvedStmt->execute($auditCondParams);
+    $resolvedCount = (int)$resolvedStmt->fetchColumn();
+
+    $rfidStmt = $pdo->prepare("SELECT COUNT(*) FROM audit_logs WHERE action_type = 'REGISTER_RFID' AND {$auditCond}");
+    $rfidStmt->execute($auditCondParams);
+    $rfidCount = (int)$rfidStmt->fetchColumn();
     $totalPending    = (int)$pdo->query("SELECT COALESCE(SUM(active_violations_count), 0) FROM users WHERE role = 'Student'")->fetchColumn();
+
+    // [AGENT CHANGE — TASK 5]
+    $courseQuery = "
+        SELECT COALESCE(NULLIF(TRIM(u.course), ''), 'Unassigned') AS course, COUNT(v.id) AS violation_count
+        FROM violations v
+        INNER JOIN users u ON v.user_id = u.id
+        WHERE {$scanCond} AND {$archivedExprU} = 0
+        GROUP BY COALESCE(NULLIF(TRIM(u.course), ''), 'Unassigned')
+        ORDER BY violation_count DESC, course ASC
+    ";
+    $courseStmt = $pdo->prepare($courseQuery);
+    $courseStmt->execute($scanCondParams);
+    $courseViolations = $courseStmt->fetchAll(\PDO::FETCH_ASSOC);
+
+    $rankingQuery = "
+        SELECT u.id AS user_id, u.name AS full_name, u.student_id, COALESCE(NULLIF(TRIM(u.course), ''), 'Unassigned') AS course,
+               'N/A' AS year_level, COUNT(v.id) AS violation_count
+        FROM violations v
+        INNER JOIN users u ON v.user_id = u.id
+        WHERE {$scanCond} AND {$archivedExprU} = 0
+        GROUP BY u.id, u.name, u.student_id, u.course
+        ORDER BY violation_count DESC, u.name ASC
+        LIMIT 500
+    ";
+    $rankingStmt = $pdo->prepare($rankingQuery);
+    $rankingStmt->execute($scanCondParams);
+    $studentRanking = $rankingStmt->fetchAll(\PDO::FETCH_ASSOC);
+    // [END TASK 5]
 
     echo json_encode([
         'success'        => true,
@@ -201,6 +300,8 @@ try {
         'actionCounts'   => (object)$actionCounts,
         'timeline'       => ['labels' => $timelineLabels, 'counts' => $timelineCounts],
         'violationTrend' => ['labels' => $timelineLabels, 'counts' => $violCounts],
+        'courseViolations' => $courseViolations,
+        'studentRanking' => $studentRanking,
         'stats'          => [
             'actionsToday'    => $actionsCount,
             'violationsMonth' => $violationsCount,

@@ -1673,6 +1673,111 @@ function mark_rfid_found(int $cardId, int $adminId): bool {
 // PHASE 2: GUARDIAN NOTIFICATION HELPER FUNCTIONS
 // ============================================================================
 
+// [AGENT CHANGE — TASK 2]
+/**
+ * Recompute and persist the student's age from DOB.
+ *
+ * Note: We intentionally preserve guardian records even when a student turns 19+.
+ * Only notification behavior is disabled at adulthood; historical consent/contact
+ * evidence remains retained for audit and safety history.
+ */
+function refresh_student_computed_age(int $studentId): ?int {
+    if ($studentId <= 0) {
+        return null;
+    }
+
+    try {
+        $pdo = pdo();
+        $colDob = $pdo->query("SHOW COLUMNS FROM users LIKE 'dob'")->fetch();
+        $colAge = $pdo->query("SHOW COLUMNS FROM users LIKE 'computed_age'")->fetch();
+        if (!$colDob || !$colAge) {
+            return null;
+        }
+
+        $stmt = $pdo->prepare('SELECT dob FROM users WHERE id = ? AND role = "Student" LIMIT 1');
+        $stmt->execute([$studentId]);
+        $dob = (string)($stmt->fetchColumn() ?? '');
+        if ($dob === '') {
+            return null;
+        }
+
+        $dobDate = new DateTime($dob);
+        $today = new DateTime('today');
+        if ($dobDate > $today) {
+            return null;
+        }
+
+        $age = (int)$dobDate->diff($today)->y;
+        $upd = $pdo->prepare('UPDATE users SET computed_age = ? WHERE id = ?');
+        $upd->execute([$age, $studentId]);
+        return $age;
+    } catch (Throwable $e) {
+        error_log('refresh_student_computed_age error: ' . $e->getMessage());
+        return null;
+    }
+}
+
+// [AGENT CHANGE — TASK 2/3/5]
+/**
+ * Check whether a table exists in the current database.
+ */
+function db_table_exists(string $tableName): bool {
+    static $cache = [];
+    if (isset($cache[$tableName])) {
+        return $cache[$tableName];
+    }
+    try {
+        $pdo = pdo();
+        $stmt = $pdo->prepare("SHOW TABLES LIKE ?");
+        $stmt->execute([$tableName]);
+        $exists = (bool)$stmt->fetch();
+        $cache[$tableName] = $exists;
+        return $exists;
+    } catch (\Throwable $e) {
+        return false;
+    }
+}
+
+/**
+ * Check whether a column exists on a table in the current database.
+ */
+function db_column_exists(string $tableName, string $columnName): bool {
+    static $cache = [];
+    $key = $tableName . '.' . $columnName;
+    if (isset($cache[$key])) {
+        return $cache[$key];
+    }
+    try {
+        $pdo = pdo();
+        $stmt = $pdo->prepare("
+            SELECT COUNT(*)
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = ?
+              AND COLUMN_NAME = ?
+        ");
+        $stmt->execute([$tableName, $columnName]);
+        $exists = ((int)$stmt->fetchColumn()) > 0;
+        $cache[$key] = $exists;
+        return $exists;
+    } catch (\Throwable $e) {
+        return false;
+    }
+}
+// [END TASK 2/3/5]
+
+/**
+ * Students aged 19+ no longer trigger guardian notifications.
+ */
+function student_requires_guardian_notification(int $studentId): bool {
+    $age = refresh_student_computed_age($studentId);
+    if ($age === null) {
+        return true;
+    }
+    return $age <= 18;
+}
+// [END TASK 2]
+
 /**
  * Check if guardian notifications are globally enabled
  * 
@@ -1738,6 +1843,12 @@ function send_guardian_entry_notification(int $studentId, string $entryTime): bo
     if (!are_guardian_notifications_enabled()) {
         return false;
     }
+
+    // [AGENT CHANGE — TASK 2]
+    if (!student_requires_guardian_notification($studentId)) {
+        return false;
+    }
+    // [END TASK 2]
     
     // Check rate limiting
     if (!can_send_guardian_notification($studentId, 'entry')) {
@@ -1865,6 +1976,12 @@ function send_guardian_violation_notification(int $studentId, array $notice): bo
     if (!are_guardian_notifications_enabled()) {
         return false;
     }
+
+    // [AGENT CHANGE — TASK 2]
+    if (!student_requires_guardian_notification($studentId)) {
+        return false;
+    }
+    // [END TASK 2]
 
     try {
         $pdo = pdo();

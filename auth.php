@@ -272,6 +272,9 @@ function handleLogin(): void {
     // Success: reset attempts, update last_login, set session
     $stmt = $pdo->prepare('UPDATE users SET failed_attempts = 0, last_login = NOW() WHERE id = :id');
     $stmt->execute([':id' => $user['id']]);
+    // [AGENT CHANGE — TASK 2]
+    refresh_student_computed_age((int)$user['id']);
+    // [END TASK 2]
 
     // Reset rate limit on successful login
     reset_rate_limit('login');

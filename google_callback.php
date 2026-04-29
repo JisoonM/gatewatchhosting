@@ -108,6 +108,9 @@ try {
         // Update last login
         $updateStmt = $pdo->prepare('UPDATE users SET last_login = NOW() WHERE id = ?');
         $updateStmt->execute([$user['id']]);
+        // [AGENT CHANGE — TASK 2]
+        refresh_student_computed_age((int)$user['id']);
+        // [END TASK 2]
         
         // Check if account is locked
         if ($user['status'] === 'Locked') {
@@ -167,6 +170,9 @@ try {
             // Update last login
             $updateStmt = $pdo->prepare('UPDATE users SET last_login = NOW() WHERE id = ?');
             $updateStmt->execute([$existing_user['id']]);
+            // [AGENT CHANGE — TASK 2]
+            refresh_student_computed_age((int)$existing_user['id']);
+            // [END TASK 2]
             
             // Set session in correct format
             session_regenerate_id(true);

@@ -118,14 +118,15 @@ try {
     $pdo->beginTransaction();
 
     // Validate target user is an existing student before any write operations.
-    $studentStmt = $pdo->prepare('SELECT id, name, student_id, status, deleted_at FROM users WHERE id = ? AND role = "Student" LIMIT 1 FOR UPDATE');
+    $archivedExpr = db_column_exists('users', 'is_archived') ? 'COALESCE(is_archived, 0)' : '0';
+    $studentStmt = $pdo->prepare('SELECT id, name, student_id, status, deleted_at, ' . $archivedExpr . ' AS is_archived FROM users WHERE id = ? AND role = "Student" LIMIT 1 FOR UPDATE');
     $studentStmt->execute([$studentUserId]);
     $studentInfo = $studentStmt->fetch(\PDO::FETCH_ASSOC);
     if (!$studentInfo) {
         throw new \Exception('Student not found');
     }
 
-    if (!empty($studentInfo['deleted_at'])) {
+    if (!empty($studentInfo['deleted_at']) || (int)($studentInfo['is_archived'] ?? 0) === 1) {
         throw new \Exception('Student account is archived and cannot be registered.');
     }
 
