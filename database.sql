@@ -16,12 +16,11 @@
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 
 --
--- Current Database: `pcu_rfid2`
+-- Current Database: `u445795498_gatewatch`
 --
 
-CREATE DATABASE /*!32312 IF NOT EXISTS*/ `pcu_rfid2` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci */;
 
-USE `pcu_rfid2`;
+USE `u445795498_gatewatch`;
 
 --
 -- Table structure for table `audit_log`
@@ -107,7 +106,7 @@ UNLOCK TABLES;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'NO_ZERO_IN_DATE,NO_ZERO_DATE,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
-/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER trg_audit_logs_block_update
+/*!50003 CREATE*/ /*!50003 TRIGGER trg_audit_logs_block_update
 BEFORE UPDATE ON audit_logs
 FOR EACH ROW
 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'audit_logs is immutable: updates are not allowed' */;;
@@ -125,7 +124,7 @@ DELIMITER ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'NO_ZERO_IN_DATE,NO_ZERO_DATE,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
-/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER trg_audit_logs_block_delete
+/*!50003 CREATE*/ /*!50003 TRIGGER trg_audit_logs_block_delete
 BEFORE DELETE ON audit_logs
 FOR EACH ROW
 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'audit_logs is immutable: deletes are not allowed' */;;
@@ -594,7 +593,7 @@ UNLOCK TABLES;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'NO_ZERO_IN_DATE,NO_ZERO_DATE,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
-/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER trg_permission_audit_log_block_update
+/*!50003 CREATE*/ /*!50003 TRIGGER trg_permission_audit_log_block_update
 BEFORE UPDATE ON permission_audit_log
 FOR EACH ROW
 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'permission_audit_log is immutable: updates are not allowed' */;;
@@ -612,7 +611,7 @@ DELIMITER ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'NO_ZERO_IN_DATE,NO_ZERO_DATE,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
-/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER trg_permission_audit_log_block_delete
+/*!50003 CREATE*/ /*!50003 TRIGGER trg_permission_audit_log_block_delete
 BEFORE DELETE ON permission_audit_log
 FOR EACH ROW
 SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'permission_audit_log is immutable: deletes are not allowed' */;;
@@ -856,7 +855,7 @@ UNLOCK TABLES;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'NO_AUTO_VALUE_ON_ZERO' */ ;
 DELIMITER ;;
-/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER `after_rfid_insert` AFTER INSERT ON `rfid_cards` FOR EACH ROW BEGIN
+/*!50003 CREATE*/ /*!50003 TRIGGER `after_rfid_insert` AFTER INSERT ON `rfid_cards` FOR EACH ROW BEGIN
     IF NEW.is_active = 1 THEN
         UPDATE users 
         SET rfid_uid = NEW.rfid_uid, 
@@ -878,7 +877,7 @@ DELIMITER ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'NO_AUTO_VALUE_ON_ZERO' */ ;
 DELIMITER ;;
-/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER `after_rfid_update` AFTER UPDATE ON `rfid_cards` FOR EACH ROW BEGIN
+/*!50003 CREATE*/ /*!50003 TRIGGER `after_rfid_update` AFTER UPDATE ON `rfid_cards` FOR EACH ROW BEGIN
     IF NEW.is_active = 0 AND OLD.is_active = 1 THEN
         UPDATE users 
         SET rfid_uid = NULL, 
@@ -1177,7 +1176,7 @@ UNLOCK TABLES;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'NO_AUTO_VALUE_ON_ZERO' */ ;
 DELIMITER ;;
-/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER `after_profile_update` AFTER UPDATE ON `student_profiles` FOR EACH ROW BEGIN
+/*!50003 CREATE*/ /*!50003 TRIGGER `after_profile_update` AFTER UPDATE ON `student_profiles` FOR EACH ROW BEGIN
     IF NEW.profile_picture != OLD.profile_picture OR 
        NEW.profile_picture_uploaded_at != OLD.profile_picture_uploaded_at THEN
         UPDATE users 
@@ -1250,7 +1249,7 @@ UNLOCK TABLES;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'NO_ZERO_IN_DATE,NO_ZERO_DATE,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
-/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER after_student_violation_insert
+/*!50003 CREATE*/ /*!50003 TRIGGER after_student_violation_insert
 AFTER INSERT ON student_violations
 FOR EACH ROW
 BEGIN
@@ -1276,7 +1275,7 @@ DELIMITER ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'NO_ZERO_IN_DATE,NO_ZERO_DATE,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
-/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER after_student_violation_update
+/*!50003 CREATE*/ /*!50003 TRIGGER after_student_violation_update
 AFTER UPDATE ON student_violations
 FOR EACH ROW
 BEGIN
@@ -1304,7 +1303,7 @@ DELIMITER ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'NO_ZERO_IN_DATE,NO_ZERO_DATE,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
-/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER after_student_violation_delete
+/*!50003 CREATE*/ /*!50003 TRIGGER after_student_violation_delete
 AFTER DELETE ON student_violations
 FOR EACH ROW
 BEGIN
@@ -1764,7 +1763,7 @@ UNLOCK TABLES;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'NO_AUTO_VALUE_ON_ZERO' */ ;
 DELIMITER ;;
-/*!50003 CREATE*/ /*!50017 DEFINER=`root`@`localhost`*/ /*!50003 TRIGGER `after_violation_insert` AFTER INSERT ON `violations` FOR EACH ROW BEGIN
+/*!50003 CREATE*/ /*!50003 TRIGGER `after_violation_insert` AFTER INSERT ON `violations` FOR EACH ROW BEGIN
     UPDATE users 
     SET violation_count = (
         SELECT COUNT(*) 
@@ -1788,10 +1787,10 @@ DELIMITER ;
 --
 
 --
--- Current Database: `pcu_rfid2`
+-- Current Database: `u445795498_gatewatch`
 --
 
-USE `pcu_rfid2`;
+USE `u445795498_gatewatch`;
 
 --
 -- Final view structure for view `v_active_rfid_cards`
@@ -1805,7 +1804,7 @@ USE `pcu_rfid2`;
 /*!50001 SET character_set_results     = utf8mb4 */;
 /*!50001 SET collation_connection      = utf8mb4_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
-/*!50013 DEFINER=`root`@`localhost` SQL SECURITY INVOKER */
+
 /*!50001 VIEW `v_active_rfid_cards` AS select `u`.`id` AS `user_id`,`u`.`student_id` AS `student_id`,`u`.`name` AS `name`,`u`.`email` AS `email`,`rc`.`rfid_uid` AS `rfid_uid`,`rc`.`registered_at` AS `registered_at`,`rc`.`registered_by` AS `registered_by`,`u`.`violation_count` AS `violation_count` from (`users` `u` join `rfid_cards` `rc` on(`u`.`id` = `rc`.`user_id`)) where `rc`.`is_active` = 1 */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
@@ -1823,7 +1822,7 @@ USE `pcu_rfid2`;
 /*!50001 SET character_set_results     = cp850 */;
 /*!50001 SET collation_connection      = cp850_general_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
-/*!50013 DEFINER=`root`@`localhost` SQL SECURITY INVOKER */
+
 /*!50001 VIEW `v_students_complete` AS select `u`.`id` AS `id`,`u`.`student_id` AS `student_id`,`u`.`name` AS `name`,`u`.`email` AS `email`,`u`.`role` AS `role`,`u`.`status` AS `status`,`u`.`created_at` AS `created_at`,`u`.`last_login` AS `last_login`,`u`.`profile_picture` AS `profile_picture`,`u`.`profile_picture_uploaded_at` AS `profile_picture_uploaded_at`,`u`.`rfid_uid` AS `rfid_uid`,`u`.`rfid_registered_at` AS `rfid_registered_at`,`u`.`violation_count` AS `violation_count`,`sp`.`bio` AS `bio`,`sp`.`phone` AS `phone`,`sp`.`emergency_contact` AS `emergency_contact`,`sp`.`emergency_phone` AS `emergency_phone`,coalesce(`va`.`total_violations`,0) AS `total_violations`,`va`.`last_violation_date` AS `last_violation_date` from ((`users` `u` left join `student_profiles` `sp` on(`u`.`id` = `sp`.`user_id`)) left join (select `violations`.`user_id` AS `user_id`,count(0) AS `total_violations`,max(`violations`.`scanned_at`) AS `last_violation_date` from `violations` group by `violations`.`user_id`) `va` on(`u`.`id` = `va`.`user_id`)) where `u`.`role` = 'Student' */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
