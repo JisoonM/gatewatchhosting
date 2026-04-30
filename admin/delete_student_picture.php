@@ -6,6 +6,7 @@
  */
 
 require_once __DIR__ . '/../db.php';
+require_once __DIR__ . '/../includes/profile_face_descriptor_helper.php';
 
 // Check if user is logged in as admin
 if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
@@ -65,6 +66,7 @@ try {
     // Update database - set profile_picture to NULL
     $updateStmt = $pdo->prepare('UPDATE users SET profile_picture = NULL WHERE id = ?');
     $updateStmt->execute([$userId]);
+    delete_profile_face_descriptor($pdo, (int)$userId);
     rotate_csrf_after_critical_action();
     
     echo json_encode([

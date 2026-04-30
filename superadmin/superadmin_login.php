@@ -91,6 +91,11 @@ if (isset($_SESSION['superadmin_logged_in']) && $_SESSION['superadmin_logged_in'
 
 $error = '';
 $success = '';
+$flashError = $_SESSION['superadmin_error'] ?? '';
+if ($flashError !== '') {
+    unset($_SESSION['superadmin_error']);
+    $error = $flashError;
+}
 
 // Handle login form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -140,6 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $_SESSION['superadmin_id'] = $superAdmin['id'];
                     $_SESSION['superadmin_name'] = $superAdmin['username'];
                     $_SESSION['superadmin_email'] = $superAdmin['email'];
+                    unset($_SESSION['superadmin_error'], $_SESSION['error']);
                     
                     // Log the login action
                     $stmt = $pdo->prepare("INSERT INTO superadmin_audit_log (super_admin_id, action, ip_address, user_agent) VALUES (?, 'LOGIN', ?, ?)");

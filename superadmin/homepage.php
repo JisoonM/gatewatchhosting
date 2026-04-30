@@ -6,9 +6,9 @@ require_superadmin_auth();
 
 $page_title = 'Admin Management Dashboard';
 
-$flashError = $_SESSION['error'] ?? null;
-if (isset($_SESSION['error'])) {
-    unset($_SESSION['error']);
+$flashError = $_SESSION['superadmin_error'] ?? null;
+if (isset($_SESSION['superadmin_error'])) {
+    unset($_SESSION['superadmin_error']);
 }
 
 // Get statistics

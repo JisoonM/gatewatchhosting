@@ -19,7 +19,7 @@ $faceEnabled = filter_var(env('FACE_RECOGNITION_ENABLED', 'false'), FILTER_VALID
 
 $adminUserId = (int)($_GET['admin_id'] ?? 0);
 if ($adminUserId <= 0) {
-    $_SESSION['error'] = 'Invalid admin ID.';
+    $_SESSION['superadmin_error'] = 'Invalid admin ID.';
     header('Location: homepage.php');
     exit;
 }
@@ -33,7 +33,7 @@ try {
     $admin = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$admin) {
-        $_SESSION['error'] = 'Admin not found.';
+        $_SESSION['superadmin_error'] = 'Admin not found.';
         header('Location: homepage.php');
         exit;
     }
@@ -44,7 +44,7 @@ try {
 
 } catch (Throwable $e) {
     error_log('Enroll admin face page error: ' . $e->getMessage());
-    $_SESSION['error'] = 'Unable to load enrollment page.';
+    $_SESSION['superadmin_error'] = 'Unable to load enrollment page.';
     header('Location: homepage.php');
     exit;
 }

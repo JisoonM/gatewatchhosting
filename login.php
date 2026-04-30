@@ -52,8 +52,8 @@ if (!$showGoogleTermsModal) {
   $googleTermsOld = [];
 }
 
-$openGuardianStep = $showGoogleTermsModal && (
-  $googleTermsError !== '' ||
+$openTermsStep = $showGoogleTermsModal && (
+  $googleTermsError === '' &&
   ((string)($googleTermsOld['accepted_terms'] ?? '') === '1')
 );
 
@@ -63,6 +63,15 @@ $guardianContactOld = trim((string)($googleTermsOld['guardian_contact_number'] ?
 $dobOld = trim((string)($googleTermsOld['dob'] ?? ''));
 $ageOld = trim((string)($googleTermsOld['computed_age'] ?? ''));
 $oldConsentType = trim((string)($googleTermsOld['consent_type'] ?? ''));
+
+$dobMonthOld = '';
+$dobDayOld = '';
+$dobYearOld = '';
+if ($dobOld !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $dobOld)) {
+  $dobYearOld = substr($dobOld, 0, 4);
+  $dobMonthOld = (string)(int)substr($dobOld, 5, 2);
+  $dobDayOld = (string)(int)substr($dobOld, 8, 2);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -181,11 +190,16 @@ $oldConsentType = trim((string)($googleTermsOld['consent_type'] ?? ''));
       backdrop-filter: blur(5px);
       -webkit-backdrop-filter: blur(5px);
     }
+    #google-terms-modal {
+      overflow: hidden;
+    }
     #google-terms-modal .terms-panel {
       background: linear-gradient(145deg, rgba(15, 23, 42, 0.86), rgba(2, 6, 23, 0.9));
       max-width: 860px;
       max-height: 92vh;
-      overflow: auto;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
     #google-terms-modal .terms-meta-grid {
       display: grid;
@@ -231,6 +245,87 @@ $oldConsentType = trim((string)($googleTermsOld['consent_type'] ?? ''));
       display: block;
       width: 100%;
       overflow-x: auto;
+    }
+    .dob-pill-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.55rem;
+      white-space: nowrap;
+    }
+    .dob-pill-chevron {
+      width: 0.95rem;
+      height: 0.95rem;
+      flex: 0 0 auto;
+      opacity: 0.9;
+    }
+    .dob-dropdown-panel {
+      position: fixed;
+      z-index: 80;
+      border: 1px solid rgba(255,255,255,0.24);
+      border-radius: 22px;
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      box-shadow: 0 24px 48px rgba(2, 6, 23, 0.34);
+      padding: 0.35rem;
+      max-height: min(14rem, calc(100vh - 120px));
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      transform-origin: top center;
+      transform: translateY(-8px) scale(0.98);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 160ms ease, transform 180ms ease;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(125,211,252,0.9) rgba(255,255,255,0.08);
+    }
+    .dob-dropdown-panel.is-open {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      pointer-events: auto;
+    }
+    .dob-dropdown-panel--year {
+      max-height: min(18rem, calc(100vh - 120px));
+      overflow-y: auto;
+    }
+    .dob-dropdown-panel::-webkit-scrollbar {
+      width: 10px;
+    }
+    .dob-dropdown-panel::-webkit-scrollbar-track {
+      background: rgba(255,255,255,0.06);
+      border-radius: 999px;
+      margin: 8px 0;
+    }
+    .dob-dropdown-panel::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, rgba(125,211,252,0.95), rgba(56,189,248,0.55));
+      border: 2px solid rgba(15, 23, 42, 0.95);
+      border-radius: 999px;
+      min-height: 42px;
+    }
+    .dob-dropdown-panel::-webkit-scrollbar-thumb:hover {
+      background: linear-gradient(180deg, rgba(125,211,252,1), rgba(56,189,248,0.75));
+    }
+    .dob-dropdown-item {
+      width: 100%;
+      border: 0;
+      border-radius: 16px;
+      padding: 0.65rem 0.9rem;
+      text-align: left;
+      color: #f8fafc;
+      background: transparent;
+      font-size: 0.94rem;
+      line-height: 1.1;
+      transition: background-color 140ms ease, color 140ms ease, transform 140ms ease;
+    }
+    .dob-dropdown-item:hover,
+    .dob-dropdown-item:focus-visible {
+      background: rgba(255,255,255,0.12);
+      outline: none;
+    }
+    .dob-dropdown-item.is-selected {
+      background: rgba(56,189,248,0.18);
+      color: #ffffff;
     }
   </style>
 </head>
@@ -364,7 +459,7 @@ $oldConsentType = trim((string)($googleTermsOld['consent_type'] ?? ''));
             <div class="min-w-0">
               <p class="text-[0.62rem] sm:text-xs uppercase tracking-[0.16em] text-sky-200/80">GateWatch Verification</p>
               <h2 class="text-2xl sm:text-3xl font-semibold tracking-tight leading-tight">Complete your registration</h2>
-              <p class="mt-2 text-sky-100/85 text-sm sm:text-base">Before we create your GateWatch account, please review the Terms, enter your date of birth, and complete the required consent details.</p>
+              <p class="mt-2 text-sky-100/85 text-sm sm:text-base">Before we create your GateWatch account, enter your date of birth first, then review and accept the Terms to continue.</p>
             </div>
           </div>
 
@@ -387,12 +482,9 @@ $oldConsentType = trim((string)($googleTermsOld['consent_type'] ?? ''));
             </div>
           </div>
 
-          <div class="flex items-center gap-2 text-xs text-sky-100/70">
-            <span class="inline-flex h-2 w-2 rounded-full bg-sky-400"></span>
-            <span><?php echo $openGuardianStep ? 'Step 2 of 2: Date of Birth & consent details' : 'Step 1 of 2: Review terms'; ?></span>
-          </div>
+          <div class="sr-only"><?php echo $openTermsStep ? 'Step 2' : 'Step 1'; ?></div>
 
-          <div class="<?php echo $openGuardianStep ? ' hidden' : ''; ?>" id="step-terms-login">
+          <div class="<?php echo $openTermsStep ? '' : ' hidden'; ?>" id="step-terms-login">
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <h3 class="text-lg font-semibold leading-tight"><?php echo htmlspecialchars($termsTitle); ?></h3>
               <a href="terms_and_conditions.php" target="_blank" rel="noopener" class="text-sm text-sky-200 hover:text-white underline underline-offset-4">Open full Terms</a>
@@ -405,7 +497,7 @@ $oldConsentType = trim((string)($googleTermsOld['consent_type'] ?? ''));
             </div>
 
             <div class="terms-consent-row mt-4 w-full min-w-0">
-              <input id="accept-login" type="checkbox" class="mt-1 h-4 w-4 shrink-0 rounded border-white/30 bg-white/10 text-sky-400" <?php echo $openGuardianStep ? 'checked' : ''; ?> />
+              <input id="accept-login" type="checkbox" class="mt-1 h-4 w-4 shrink-0 rounded border-white/30 bg-white/10 text-sky-400" <?php echo $openTermsStep ? 'checked' : ''; ?> />
               <label for="accept-login" class="min-w-0 text-sm leading-relaxed text-sky-100/90 [text-align:justify] break-words">
                 I have read and I agree to the Terms and Conditions, including my consent for GateWatch to collect and use my
                 <strong>Full Name</strong>, <strong>Student ID</strong>, <strong>PCU Email Address</strong>, and required
@@ -416,8 +508,9 @@ $oldConsentType = trim((string)($googleTermsOld['consent_type'] ?? ''));
             <p id="terms-scroll-hint" class="mt-3 text-xs text-sky-100/70">Scroll to the bottom of the Terms to enable Continue.</p>
 
             <div class="terms-actions mt-4">
+              <button type="button" id="btn-terms-back-login" class="w-full rounded-full border border-white/25 bg-white/10 px-4 py-2.5 text-sm font-medium text-white hover:bg-white/15 transition">Back to Date of Birth</button>
               <button type="button" id="btn-continue-login" class="w-full rounded-full bg-sky-500/90 hover:bg-sky-500 px-6 py-2.5 text-sm font-semibold text-slate-900 transition disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-sky-500/50">
-                Accept & Continue
+                Accept & Create Account
               </button>
               <form method="POST" action="google_terms.php" class="w-full">
                 <?php echo csrf_input(); ?>
@@ -427,65 +520,105 @@ $oldConsentType = trim((string)($googleTermsOld['consent_type'] ?? ''));
             </div>
           </div>
 
-          <div class="<?php echo $openGuardianStep ? '' : ' hidden'; ?>" id="step-guardian-login">
-            <h3 class="text-lg font-semibold leading-tight">Date of Birth & Consent Details</h3>
-            <p class="text-sm text-sky-100/85 mt-2 [text-align:justify]">
-              Your age is computed from your date of birth and cannot be manually overridden.
-            </p>
-
-            <form method="POST" action="google_terms.php" class="mt-5 space-y-4">
+          <div class="<?php echo $openTermsStep ? ' hidden' : ''; ?>" id="step-guardian-login">
+            <form method="POST" action="google_terms.php" id="guardian-consent-form" class="mt-5 space-y-4">
               <?php echo csrf_input(); ?>
               <input type="hidden" name="action" value="complete" />
-              <input type="hidden" name="accepted_terms" id="accepted_terms_login" value="<?php echo $openGuardianStep ? '1' : '0'; ?>" />
+              <input type="hidden" name="accepted_terms" id="accepted_terms_login" value="<?php echo $openTermsStep ? '1' : '0'; ?>" />
               <input type="hidden" name="computed_age" id="computed_age_login" value="<?php echo htmlspecialchars($ageOld); ?>" />
               <input type="hidden" name="consent_type" id="consent_type_login" value="<?php echo htmlspecialchars($oldConsentType !== '' ? $oldConsentType : 'adult'); ?>" />
-
-              <div>
-                <label class="block text-sm font-medium text-sky-50">Date of Birth <span class="text-red-300">*</span></label>
-                <input name="dob" id="dob_login" type="date" required max="<?php echo date('Y-m-d'); ?>"
-                  value="<?php echo htmlspecialchars($dobOld); ?>"
-                  class="mt-1 w-full rounded-xl border border-white/25 bg-white/10 px-4 py-3 text-white placeholder:text-sky-100/50 focus:outline-none focus:ring-2 focus:ring-sky-300/60" />
-                <p id="computed-age-label" class="mt-2 text-sm text-sky-100/90">Your age: <?php echo ($ageOld !== '' ? (int)$ageOld : '--'); ?> years old</p>
+              <input type="hidden" name="dob" id="dob_login" value="<?php echo htmlspecialchars($dobOld); ?>" />
+              <div class="mx-auto w-full max-w-[620px] rounded-[28px] border border-white/35 bg-white/[0.10] px-4 py-4 backdrop-blur-md">
+                <?php
+                  $monthNames = [
+                    1 => 'January', 2 => 'February', 3 => 'March', 4 => 'April',
+                    5 => 'May', 6 => 'June', 7 => 'July', 8 => 'August',
+                    9 => 'September', 10 => 'October', 11 => 'November', 12 => 'December'
+                  ];
+                  $monthButtonLabel = ($dobMonthOld !== '' && isset($monthNames[(int)$dobMonthOld])) ? $monthNames[(int)$dobMonthOld] : 'MONTH';
+                  $yearButtonLabel = $dobYearOld !== '' ? $dobYearOld : 'YEAR';
+                ?>
+                <input type="hidden" id="dob_month" value="<?php echo htmlspecialchars($dobMonthOld); ?>" />
+                <input type="hidden" id="dob_year" value="<?php echo htmlspecialchars($dobYearOld); ?>" />
+                <div class="grid grid-cols-[1fr_130px_1fr] gap-3">
+                  <div class="relative">
+                    <button type="button" id="dob_month_button" class="dob-pill-button h-12 w-full rounded-full border border-white/35 bg-white/[0.12] px-4 text-white text-sm font-semibold tracking-wide transition hover:bg-white/[0.18] focus:outline-none focus:ring-2 focus:ring-sky-300/60" aria-haspopup="listbox" aria-expanded="false">
+                      <span id="dob_month_label"><?php echo htmlspecialchars($monthButtonLabel); ?></span>
+                      <svg class="dob-pill-chevron" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                        <path d="M5 8l5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                      </svg>
+                    </button>
+                    <div id="dob_month_menu" class="dob-dropdown-panel" role="listbox" aria-label="Month">
+                      <?php foreach ($monthNames as $monthNumber => $monthLabel): ?>
+                        <button type="button" class="dob-dropdown-item" data-value="<?php echo $monthNumber; ?>" data-label="<?php echo htmlspecialchars($monthLabel); ?>" role="option">
+                          <?php echo htmlspecialchars($monthLabel); ?>
+                        </button>
+                      <?php endforeach; ?>
+                    </div>
+                  </div>
+                  <input id="dob_day" type="text" inputmode="numeric" maxlength="2" autocomplete="off"
+                    value="<?php echo htmlspecialchars($dobDayOld); ?>"
+                    class="h-12 rounded-full border border-white/35 bg-white/[0.12] px-4 text-center text-white text-sm tracking-wide placeholder:text-sky-100/75 focus:outline-none focus:ring-2 focus:ring-sky-300/60"
+                    placeholder="DAY" aria-label="Day" />
+                  <div class="relative">
+                    <button type="button" id="dob_year_button" class="dob-pill-button h-12 w-full rounded-full border border-white/35 bg-white/[0.12] px-4 text-white text-sm font-semibold tracking-wide transition hover:bg-white/[0.18] focus:outline-none focus:ring-2 focus:ring-sky-300/60" aria-haspopup="listbox" aria-expanded="false">
+                      <span id="dob_year_label"><?php echo htmlspecialchars($yearButtonLabel); ?></span>
+                      <svg class="dob-pill-chevron" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                        <path d="M5 8l5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+                      </svg>
+                    </button>
+                    <div id="dob_year_menu" class="dob-dropdown-panel dob-dropdown-panel--year" role="listbox" aria-label="Year">
+                      <?php
+                        $currentYear = (int)date('Y');
+                        for ($y = $currentYear; $y >= 1900; $y--):
+                      ?>
+                        <button type="button" class="dob-dropdown-item" data-value="<?php echo $y; ?>" data-label="<?php echo $y; ?>" role="option">
+                          <?php echo $y; ?>
+                        </button>
+                      <?php endfor; ?>
+                    </div>
+                  </div>
+                </div>
               </div>
+              <p id="computed-age-label" class="sr-only">Your age: <?php echo ($ageOld !== '' ? (int)$ageOld : '--'); ?> years old</p>
 
-              <div id="guardian-fields-login">
+              <div id="guardian-fields-login" class="space-y-4">
                 <label class="block text-sm font-medium text-sky-50">Parent/Guardian Full Name</label>
                 <input name="guardian_full_name" type="text" required placeholder="e.g., Juan Dela Cruz"
                   value="<?php echo htmlspecialchars($guardianNameOld); ?>"
                   class="mt-1 w-full rounded-xl border border-white/25 bg-white/10 px-4 py-3 text-white placeholder:text-sky-100/50 focus:outline-none focus:ring-2 focus:ring-sky-300/60" />
-              </div>
 
-              <div>
                 <label class="block text-sm font-medium text-sky-50">Parent/Guardian Email Address</label>
                 <input name="guardian_email" type="email" required placeholder="e.g., guardian@example.com"
                   value="<?php echo htmlspecialchars($guardianEmailOld); ?>"
                   class="mt-1 w-full rounded-xl border border-white/25 bg-white/10 px-4 py-3 text-white placeholder:text-sky-100/50 focus:outline-none focus:ring-2 focus:ring-sky-300/60" />
-              </div>
 
-              <div>
                 <label class="block text-sm font-medium text-sky-50">Parent/Guardian Contact Number</label>
                 <input name="guardian_contact_number" type="tel" required placeholder="e.g., 09XXXXXXXXX"
                   value="<?php echo htmlspecialchars($guardianContactOld); ?>"
                   class="mt-1 w-full rounded-xl border border-white/25 bg-white/10 px-4 py-3 text-white placeholder:text-sky-100/50 focus:outline-none focus:ring-2 focus:ring-sky-300/60" />
               </div>
 
-              <div id="minor-consent-clause-login" class="rounded-xl border border-white/20 bg-white/10 p-3 text-sm text-sky-100/90 [text-align:justify]">
+              <div id="minor-consent-clause-login" class="hidden rounded-xl border border-white/20 bg-white/10 p-3 text-sm text-sky-100/90 [text-align:justify]">
                 By registering, a parent/guardian will be notified of this student's attendance violations and emergency incidents.
               </div>
 
-              <div id="adult-consent-clause-login" class="rounded-xl border border-white/20 bg-white/10 p-3 text-sm text-sky-100/90 [text-align:justify]">
-                By registering, I acknowledge responsibility for my own attendance record.
+              <div class="terms-input-row pt-3 justify-center">
+                <button type="button" id="btn-review-terms-login" class="w-full sm:w-[320px] rounded-full border border-white/35 bg-white/[0.14] hover:bg-white/[0.2] px-6 py-3 text-sm font-semibold tracking-wide text-white transition disabled:opacity-50 disabled:cursor-not-allowed">NEXT</button>
               </div>
+            </form>
 
-              <div class="terms-input-row pt-2">
-                <button type="button" id="btn-back-login" class="w-full sm:w-auto rounded-full border border-white/25 bg-white/10 px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/15 transition">Back</button>
-                <button type="submit" id="btn-submit-login" class="w-full sm:w-auto rounded-full bg-emerald-400/90 hover:bg-emerald-400 px-6 py-2.5 text-sm font-semibold text-slate-900 transition disabled:opacity-50 disabled:cursor-not-allowed">Submit & Create Account</button>
-              </div>
+            <form method="POST" action="google_terms.php" class="mt-3 w-full flex justify-center">
+              <?php echo csrf_input(); ?>
+              <input type="hidden" name="action" value="decline" />
+              <button type="submit" class="w-full sm:w-[320px] rounded-full border border-white/35 bg-white/[0.14] hover:bg-white/[0.2] px-6 py-3 text-sm font-bold tracking-wide text-red-400 transition">
+                Cancel Registration
+              </button>
             </form>
           </div>
 
-          <p class="text-xs text-sky-100/70 [text-align:justify]">
-            After submission, your account will be <strong>pending verification</strong> by the Student Services Office.
+          <p class="text-xs text-sky-100/85 [text-align:justify]">
+            By registering, I acknowledge responsibility for my own attendance record.
           </p>
         </div>
       </section>
@@ -641,24 +774,170 @@ $oldConsentType = trim((string)($googleTermsOld['consent_type'] ?? ''));
       const stepTermsLogin = document.getElementById('step-terms-login');
       const stepGuardianLogin = document.getElementById('step-guardian-login');
       const acceptedTermsLogin = document.getElementById('accepted_terms_login');
-      const btnBackLogin = document.getElementById('btn-back-login');
+      const btnTermsBackLogin = document.getElementById('btn-terms-back-login');
+      const btnReviewTermsLogin = document.getElementById('btn-review-terms-login');
+      const guardianConsentForm = document.getElementById('guardian-consent-form');
       const dobLogin = document.getElementById('dob_login');
+      const dobMonthInput = document.getElementById('dob_month');
+      const dobDayInput = document.getElementById('dob_day');
+      const dobYearInput = document.getElementById('dob_year');
+      const dobMonthButton = document.getElementById('dob_month_button');
+      const dobYearButton = document.getElementById('dob_year_button');
+      const dobMonthLabel = document.getElementById('dob_month_label');
+      const dobYearLabel = document.getElementById('dob_year_label');
+      const dobMonthMenu = document.getElementById('dob_month_menu');
+      const dobYearMenu = document.getElementById('dob_year_menu');
       const computedAgeLabel = document.getElementById('computed-age-label');
       const computedAgeInput = document.getElementById('computed_age_login');
       const consentTypeInput = document.getElementById('consent_type_login');
       const guardianFields = document.getElementById('guardian-fields-login');
       const minorConsent = document.getElementById('minor-consent-clause-login');
-      const adultConsent = document.getElementById('adult-consent-clause-login');
-      const submitBtn = document.getElementById('btn-submit-login');
+      const submitBtn = document.getElementById('btn-review-terms-login');
 
-      if (acceptLogin && btnContinueLogin && stepTermsLogin && stepGuardianLogin && acceptedTermsLogin && btnBackLogin) {
+      if (
+        acceptLogin &&
+        btnContinueLogin &&
+        stepTermsLogin &&
+        stepGuardianLogin &&
+        acceptedTermsLogin &&
+        btnTermsBackLogin &&
+        btnReviewTermsLogin &&
+        guardianConsentForm
+      ) {
         // [AGENT CHANGE — TASK 2]
         const guardianInputs = guardianFields
           ? Array.from(guardianFields.querySelectorAll('input[name="guardian_full_name"], input[name="guardian_email"], input[name="guardian_contact_number"]'))
           : [];
+        const monthNames = {
+          1: 'January', 2: 'February', 3: 'March', 4: 'April',
+          5: 'May', 6: 'June', 7: 'July', 8: 'August',
+          9: 'September', 10: 'October', 11: 'November', 12: 'December'
+        };
+        const dropdownState = { monthOpen: false, yearOpen: false };
+        const dropdownPadding = 8;
+
+        const getDaysInMonth = (month, year) => {
+          if (!month || !year) return 31;
+          return new Date(year, month, 0).getDate();
+        };
+
+        const clampDayByCalendar = () => {
+          if (!dobDayInput) return;
+          const month = Number(dobMonthInput?.value || 0);
+          const year = Number(dobYearInput?.value || 0);
+          const maxDay = getDaysInMonth(month, year);
+          let dayValue = String(dobDayInput.value || '').replace(/\D/g, '').slice(0, 2);
+          if (dayValue !== '') {
+            const dayInt = Number(dayValue);
+            if (dayInt > maxDay) dayValue = String(maxDay);
+            if (dayInt < 1) dayValue = '1';
+          }
+          dobDayInput.value = dayValue;
+          dobDayInput.setAttribute('max', String(maxDay));
+        };
+
+        const closeDobDropdowns = () => {
+          dropdownState.monthOpen = false;
+          dropdownState.yearOpen = false;
+          [dobMonthMenu, dobYearMenu].forEach((menuEl) => {
+            if (!menuEl) return;
+            menuEl.classList.remove('is-open');
+            menuEl.style.top = '';
+            menuEl.style.left = '';
+            menuEl.style.width = '';
+            if (menuEl._dobOriginalParent && menuEl.parentElement === document.body) {
+              if (menuEl._dobOriginalNextSibling && menuEl._dobOriginalNextSibling.parentNode === menuEl._dobOriginalParent) {
+                menuEl._dobOriginalParent.insertBefore(menuEl, menuEl._dobOriginalNextSibling);
+              } else {
+                menuEl._dobOriginalParent.appendChild(menuEl);
+              }
+            }
+          });
+          if (dobMonthButton) dobMonthButton.setAttribute('aria-expanded', 'false');
+          if (dobYearButton) dobYearButton.setAttribute('aria-expanded', 'false');
+        };
+
+        const setDropdownItemState = (menuEl, selectedValue) => {
+          if (!menuEl) return;
+          Array.from(menuEl.querySelectorAll('.dob-dropdown-item')).forEach((item) => {
+            item.classList.toggle('is-selected', String(item.dataset.value || '') === String(selectedValue || ''));
+          });
+        };
+
+        const openDobDropdown = (type) => {
+          const isMonth = type === 'month';
+          const menuEl = isMonth ? dobMonthMenu : dobYearMenu;
+          const buttonEl = isMonth ? dobMonthButton : dobYearButton;
+          const otherMenuEl = isMonth ? dobYearMenu : dobMonthMenu;
+          const otherButtonEl = isMonth ? dobYearButton : dobMonthButton;
+          if (!menuEl || !buttonEl) return;
+
+          if (otherMenuEl) otherMenuEl.classList.remove('is-open');
+          if (otherButtonEl) otherButtonEl.setAttribute('aria-expanded', 'false');
+
+          const willOpen = !menuEl.classList.contains('is-open');
+          closeDobDropdowns();
+          if (willOpen) {
+            const rect = buttonEl.getBoundingClientRect();
+            const menuWidth = Math.max(rect.width, 182);
+            const left = Math.max(12, Math.min(rect.left, window.innerWidth - menuWidth - 12));
+            const top = Math.min(rect.bottom + dropdownPadding, window.innerHeight - 12);
+            if (menuEl.parentElement !== document.body) {
+              menuEl._dobOriginalParent = menuEl.parentElement;
+              menuEl._dobOriginalNextSibling = menuEl.nextSibling;
+              document.body.appendChild(menuEl);
+            }
+            menuEl.style.left = `${left}px`;
+            menuEl.style.top = `${top}px`;
+            menuEl.style.width = `${menuWidth}px`;
+            menuEl.classList.add('is-open');
+            buttonEl.setAttribute('aria-expanded', 'true');
+            if (isMonth) {
+              dropdownState.monthOpen = true;
+            } else {
+              dropdownState.yearOpen = true;
+            }
+          }
+        };
+
+        const syncDobButtonLabels = () => {
+          const monthValue = Number(dobMonthInput?.value || 0);
+          const yearValue = String(dobYearInput?.value || '');
+          if (dobMonthLabel) {
+            dobMonthLabel.textContent = monthValue && monthNames[monthValue] ? monthNames[monthValue] : 'MONTH';
+          }
+          if (dobYearLabel) {
+            dobYearLabel.textContent = yearValue !== '' ? yearValue : 'YEAR';
+          }
+          setDropdownItemState(dobMonthMenu, monthValue);
+          setDropdownItemState(dobYearMenu, yearValue);
+        };
+
+        const buildDobFromParts = () => {
+          const month = Number(dobMonthInput?.value || 0);
+          const day = Number((dobDayInput?.value || '').trim());
+          const year = Number(dobYearInput?.value || 0);
+          if (!month || !day || !year) return '';
+          const maxDay = getDaysInMonth(month, year);
+          if (day < 1 || day > maxDay) return '';
+          const dateObj = new Date(year, month - 1, day);
+          if (
+            dateObj.getFullYear() !== year ||
+            (dateObj.getMonth() + 1) !== month ||
+            dateObj.getDate() !== day
+          ) {
+            return '';
+          }
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          if (dateObj > today) return '';
+          const isoMonth = String(month).padStart(2, '0');
+          const isoDay = String(day).padStart(2, '0');
+          return `${year}-${isoMonth}-${isoDay}`;
+        };
 
         const computeAge = (dobString) => {
-          if (!dobString) return null;
+          if (!dobString || !/^\d{4}-\d{2}-\d{2}$/.test(dobString)) return null;
           const dob = new Date(dobString + 'T00:00:00');
           if (Number.isNaN(dob.getTime())) return null;
           const today = new Date();
@@ -670,8 +949,12 @@ $oldConsentType = trim((string)($googleTermsOld['consent_type'] ?? ''));
         };
 
         const syncDobDrivenFields = () => {
-          const age = computeAge(dobLogin?.value || '');
-          const isMinor = age !== null && age <= 18;
+          clampDayByCalendar();
+          const normalizedDob = buildDobFromParts();
+          if (dobLogin) dobLogin.value = normalizedDob;
+          syncDobButtonLabels();
+          const age = computeAge(normalizedDob);
+          const isMinor = age !== null && age <= 17;
 
           if (computedAgeLabel) {
             computedAgeLabel.textContent = age === null ? 'Your age: -- years old' : ('Your age: ' + age + ' years old');
@@ -685,7 +968,6 @@ $oldConsentType = trim((string)($googleTermsOld['consent_type'] ?? ''));
 
           if (guardianFields) guardianFields.classList.toggle('hidden', !isMinor);
           if (minorConsent) minorConsent.classList.toggle('hidden', !isMinor);
-          if (adultConsent) adultConsent.classList.toggle('hidden', isMinor);
 
           guardianInputs.forEach((input) => {
             input.required = isMinor;
@@ -693,8 +975,9 @@ $oldConsentType = trim((string)($googleTermsOld['consent_type'] ?? ''));
         };
 
         const syncSubmitButtonState = () => {
-          const age = computeAge(dobLogin?.value || '');
-          const isMinor = age !== null && age <= 18;
+          const normalizedDob = buildDobFromParts();
+          const age = computeAge(normalizedDob);
+          const isMinor = age !== null && age <= 17;
           const hasDob = age !== null;
           const hasGuardianValues = !isMinor || guardianInputs.every((input) => input.value.trim() !== '');
           if (submitBtn) {
@@ -735,15 +1018,18 @@ $oldConsentType = trim((string)($googleTermsOld['consent_type'] ?? ''));
         }
         syncContinueState();
 
-        btnContinueLogin.addEventListener('click', () => {
-          if (btnContinueLogin.disabled) return;
-          acceptedTermsLogin.value = '1';
+        btnReviewTermsLogin.addEventListener('click', () => {
+          if (submitBtn?.disabled) return;
+          stepGuardianLogin.classList.add('hidden');
+          stepTermsLogin.classList.remove('hidden');
+          acceptedTermsLogin.value = '0';
+          stepTermsLogin.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+
+        btnTermsBackLogin.addEventListener('click', () => {
           stepTermsLogin.classList.add('hidden');
           stepGuardianLogin.classList.remove('hidden');
-
-          syncDobDrivenFields();
-          syncSubmitButtonState();
-
+          acceptedTermsLogin.value = '0';
           const firstInput = stepGuardianLogin.querySelector('input[name="dob"]');
           if (firstInput) {
             firstInput.focus({ preventScroll: true });
@@ -751,24 +1037,74 @@ $oldConsentType = trim((string)($googleTermsOld['consent_type'] ?? ''));
           stepGuardianLogin.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
 
-        btnBackLogin.addEventListener('click', () => {
-          stepGuardianLogin.classList.add('hidden');
-          stepTermsLogin.classList.remove('hidden');
-          acceptedTermsLogin.value = '0';
-          stepTermsLogin.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        btnContinueLogin.addEventListener('click', () => {
+          if (btnContinueLogin.disabled) return;
+          acceptedTermsLogin.value = '1';
+          guardianConsentForm.submit();
         });
 
         // [AGENT CHANGE — TASK 2]
-        if (dobLogin) {
-          dobLogin.addEventListener('change', () => {
+        if (dobMonthInput) dobMonthInput.addEventListener('change', () => { syncDobDrivenFields(); syncSubmitButtonState(); });
+        if (dobYearInput) dobYearInput.addEventListener('change', () => { syncDobDrivenFields(); syncSubmitButtonState(); });
+        if (dobDayInput) {
+          dobDayInput.addEventListener('input', () => {
+            dobDayInput.value = String(dobDayInput.value || '').replace(/\D/g, '').slice(0, 2);
             syncDobDrivenFields();
             syncSubmitButtonState();
           });
-          dobLogin.addEventListener('input', () => {
+          dobDayInput.addEventListener('blur', () => {
             syncDobDrivenFields();
             syncSubmitButtonState();
           });
         }
+        if (dobMonthButton) {
+          dobMonthButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            openDobDropdown('month');
+          });
+        }
+        if (dobYearButton) {
+          dobYearButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            openDobDropdown('year');
+          });
+        }
+        [dobMonthMenu, dobYearMenu].forEach((menuEl) => {
+          if (!menuEl) return;
+          menuEl.querySelectorAll('.dob-dropdown-item').forEach((item) => {
+            item.addEventListener('click', (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const value = String(item.dataset.value || '');
+              const label = String(item.dataset.label || item.textContent || '');
+              if (menuEl === dobMonthMenu && dobMonthInput) {
+                dobMonthInput.value = value;
+                if (dobMonthLabel) dobMonthLabel.textContent = label;
+              }
+              if (menuEl === dobYearMenu && dobYearInput) {
+                dobYearInput.value = value;
+                if (dobYearLabel) dobYearLabel.textContent = label;
+              }
+              syncDobDrivenFields();
+              syncSubmitButtonState();
+              closeDobDropdowns();
+            });
+          });
+        });
+        document.addEventListener('click', (event) => {
+          const isMonthClick = dobMonthButton && dobMonthButton.contains(event.target);
+          const isYearClick = dobYearButton && dobYearButton.contains(event.target);
+          const isMonthMenuClick = dobMonthMenu && dobMonthMenu.contains(event.target);
+          const isYearMenuClick = dobYearMenu && dobYearMenu.contains(event.target);
+          if (isMonthClick || isYearClick || isMonthMenuClick || isYearMenuClick) return;
+          closeDobDropdowns();
+        });
+        document.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape') closeDobDropdowns();
+        });
+        window.addEventListener('resize', closeDobDropdowns);
         guardianInputs.forEach((input) => {
           input.addEventListener('input', syncSubmitButtonState);
         });

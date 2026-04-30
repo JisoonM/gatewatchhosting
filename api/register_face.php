@@ -9,6 +9,7 @@
  */
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../includes/encryption_helper.php';
+require_once __DIR__ . '/../includes/profile_face_descriptor_helper.php';
 
 header('Content-Type: application/json');
 send_api_security_headers();
@@ -57,6 +58,15 @@ if (!filter_var(env('FACE_RECOGNITION_ENABLED', 'false'), FILTER_VALIDATE_BOOLEA
     exit;
 }
 
+function descriptor_distance(array $left, array $right): float {
+    $sum = 0.0;
+    for ($i = 0; $i < 128; $i++) {
+        $diff = (float)$left[$i] - (float)$right[$i];
+        $sum += $diff * $diff;
+    }
+    return sqrt($sum);
+}
+
 try {
     $input = json_decode(file_get_contents('php://input'), true);
     
@@ -100,7 +110,7 @@ try {
     $pdo = pdo();
     
     // Verify student exists and is active
-    $stmt = $pdo->prepare("SELECT id, name, student_id, status FROM users WHERE id = ? AND role = 'Student'");
+    $stmt = $pdo->prepare("SELECT id, name, student_id, status, profile_picture FROM users WHERE id = ? AND role = 'Student'");
     $stmt->execute([$studentId]);
     $student = $stmt->fetch(PDO::FETCH_ASSOC);
     
@@ -110,6 +120,30 @@ try {
     
     if ($student['status'] !== 'Active') {
         throw new Exception('Student account is not active');
+    }
+
+    $profileDescriptorRow = get_profile_face_descriptor_row($pdo, (int)$studentId);
+    if (!$profileDescriptorRow) {
+        throw new Exception('No profile-face reference found for this student. Upload a clear profile picture first before face enrollment.');
+    }
+
+    $profileDescriptorRaw = decrypt_descriptor(
+        $profileDescriptorRow['descriptor_data'],
+        $profileDescriptorRow['descriptor_iv'],
+        $profileDescriptorRow['descriptor_tag']
+    );
+    $profileDescriptor = json_decode($profileDescriptorRaw, true);
+    if (!is_array($profileDescriptor) || count($profileDescriptor) !== 128) {
+        throw new Exception('Stored profile-face reference is invalid. Please re-upload the student profile picture.');
+    }
+
+    $profileMatchThreshold = (float)env('FACE_PROFILE_MATCH_THRESHOLD', (string)env('FACE_MATCH_THRESHOLD', '0.45'));
+    if ($profileMatchThreshold <= 0 || $profileMatchThreshold > 2) {
+        $profileMatchThreshold = 0.45;
+    }
+    $profileDistance = descriptor_distance($descriptor, $profileDescriptor);
+    if ($profileDistance > $profileMatchThreshold) {
+        throw new Exception('Enrollment face does not match the uploaded profile picture for this student.');
     }
 
     // Cross-student duplicate-face protection:
@@ -147,12 +181,7 @@ try {
                 continue;
             }
 
-            $sum = 0.0;
-            for ($i = 0; $i < 128; $i++) {
-                $diff = $descriptor[$i] - (float)$existingDescriptor[$i];
-                $sum += $diff * $diff;
-            }
-            $distance = sqrt($sum);
+            $distance = descriptor_distance($descriptor, $existingDescriptor);
 
             if ($distance < $closestOtherDistance) {
                 $closestOtherDistance = $distance;
@@ -212,28 +241,24 @@ try {
                     $row['descriptor_tag']
                 );
                 $existingDescriptor = json_decode($decrypted, true);
-                
-                if (!is_array($existingDescriptor) || count($existingDescriptor) !== 128) continue;
-                
-                // Euclidean distance
-                $sum = 0.0;
-                for ($i = 0; $i < 128; $i++) {
-                    $diff = (float)$descriptor[$i] - (float)$existingDescriptor[$i];
-                    $sum += $diff * $diff;
-                }
-                $distance = sqrt($sum);
-                
-                if ($distance < $duplicateThreshold) {
-                    throw new Exception('This descriptor is too similar to an existing one (likely duplicate capture). Please capture a different angle.');
-                }
-                
-                if ($distance > $inconsistentThreshold) {
-                    throw new Exception('This descriptor is too different from existing ones. Ensure this is the same student, or re-enroll from scratch.');
-                }
             } catch (\Throwable $e) {
                 // Corrupt or legacy descriptor row — skip and continue with remaining rows
                 error_log('Inter-descriptor check: descriptor row skipped for user ' . $studentId . ': ' . $e->getMessage());
                 continue;
+            }
+
+            if (!is_array($existingDescriptor) || count($existingDescriptor) !== 128) {
+                continue;
+            }
+
+            $distance = descriptor_distance($descriptor, $existingDescriptor);
+
+            if ($distance < $duplicateThreshold) {
+                throw new Exception('This descriptor is too similar to an existing one (likely duplicate capture). Please capture a different angle.');
+            }
+
+            if ($distance > $inconsistentThreshold) {
+                throw new Exception('This descriptor is too different from existing ones. Ensure this is the same student, or re-enroll from scratch.');
             }
         }
     }

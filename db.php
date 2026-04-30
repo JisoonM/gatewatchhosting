@@ -287,7 +287,7 @@ function require_admin_auth(): void {
     if (!isset($_SESSION['admin_id'])) {
         destroy_session_completely();
         session_start();
-        $_SESSION['error'] = 'Session invalid. Please log in again.';
+        $_SESSION['admin_error'] = 'Session invalid. Please log in again.';
         header('Location: admin_login.php');
         exit;
     }
@@ -296,7 +296,7 @@ function require_admin_auth(): void {
     if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity'] > 1800)) {
         destroy_session_completely();
         session_start();
-        $_SESSION['error'] = 'Session expired. Please log in again.';
+        $_SESSION['admin_error'] = 'Session expired. Please log in again.';
         header('Location: admin_login.php');
         exit;
     }
@@ -353,7 +353,7 @@ function require_superadmin_auth(): void {
     if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity'] > 1800)) {
         destroy_session_completely();
         session_start();
-        $_SESSION['error'] = 'Session expired. Please log in again.';
+        $_SESSION['superadmin_error'] = 'Session expired. Please log in again.';
         header('Location: superadmin_login.php');
         exit;
     }

@@ -6,6 +6,7 @@
  */
 
 require_once __DIR__ . '/../db.php';
+require_once __DIR__ . '/../includes/profile_face_descriptor_helper.php';
 
 // Check if user is logged in as admin
 if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
@@ -116,6 +117,9 @@ try {
         echo json_encode(['success' => false, 'error' => 'Failed to save uploaded file']);
         exit;
     }
+
+    // Invalidate old profile-face descriptor; a new one must be captured from this new image.
+    delete_profile_face_descriptor($pdo, (int)$studentId);
     
     // Update database
     $updateStmt = $pdo->prepare('UPDATE users SET profile_picture = ? WHERE id = ?');

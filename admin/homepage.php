@@ -15,16 +15,21 @@ if (!$isAdminSession && !$isSuperadminSession) {
 $page_title = 'Student Management';
 $activeSection = $_GET['section'] ?? 'students';
 
-// [AGENT CHANGE — TASK 4]
-if ($activeSection === 'audit' && !$isSuperadminSession) {
-    header('Location: /pcurfid2/admin/homepage.php?section=students');
+if ($activeSection === 'audit') {
+    header('Location: /pcurfid2/superadmin/audit_logs.php');
     exit;
 }
-// [END TASK 4]
 
 // Get all students
 try {
     $pdo = pdo();
+    if (!db_column_exists('users', 'year_level')) {
+        try {
+            $pdo->exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS year_level VARCHAR(20) NULL AFTER course");
+        } catch (\PDOException $e) {
+            error_log('homepage ensure year_level warning: ' . $e->getMessage());
+        }
+    }
     // [AGENT CHANGE — TASK 2]
     $hasDobColumn = db_column_exists('users', 'dob');
     $hasArchivedColumn = db_column_exists('users', 'is_archived');
@@ -234,7 +239,8 @@ try {
     $analyticsViolationTrend = ['labels' => [], 'counts' => []];
     $analyticsStats = ['actionsToday' => 0, 'violationsMonth' => 0, 'resolvedMonth' => 0, 'rfidMonth' => 0, 'totalPending' => 0];
     // [AGENT CHANGE — TASK 5]
-    $analyticsCourseViolations = [];
+    $analyticsCourseYearViolations = [];
+    $analyticsCourseYearHighlights = ['most' => null, 'least' => null];
     $analyticsStudentRanking = [];
     // [END TASK 5]
 
@@ -292,26 +298,39 @@ try {
             $analyticsStats['rfidMonth']       = (int)$pdo->query("SELECT COUNT(*) FROM audit_logs WHERE action_type = 'REGISTER_RFID' AND YEAR(created_at)=YEAR(CURDATE()) AND MONTH(created_at)=MONTH(CURDATE())")->fetchColumn();
             $analyticsStats['totalPending']    = (int)$pdo->query("SELECT COALESCE(SUM(active_violations_count), 0) FROM users WHERE role = 'Student'")->fetchColumn();
 
-            $courseSql = "
-                SELECT COALESCE(NULLIF(TRIM(u.course), ''), 'Unassigned') AS course, COUNT(v.id) AS violation_count
-                FROM violations v
-                INNER JOIN users u ON v.user_id = u.id
-                WHERE v.scanned_at >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
-                  AND ' . $archivedExprU . ' = 0
-                GROUP BY COALESCE(NULLIF(TRIM(u.course), ''), 'Unassigned')
-                ORDER BY violation_count DESC, course ASC
+            $courseYearSql = "
+                SELECT
+                    COALESCE(NULLIF(TRIM(u.course), ''), 'Unassigned') AS course,
+                    COALESCE(NULLIF(TRIM(u.year_level), ''), 'Unassigned') AS year_level,
+                    COUNT(sv.id) AS violation_count
+                FROM student_violations sv
+                INNER JOIN users u ON sv.user_id = u.id
+                WHERE sv.created_at >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+                  AND u.role = 'Student'
+                  AND u.deleted_at IS NULL
+                  AND {$archivedExprU} = 0
+                GROUP BY
+                    COALESCE(NULLIF(TRIM(u.course), ''), 'Unassigned'),
+                    COALESCE(NULLIF(TRIM(u.year_level), ''), 'Unassigned')
+                ORDER BY violation_count DESC, course ASC, year_level ASC
             ";
-            $analyticsCourseViolations = $pdo->query($courseSql)->fetchAll(\PDO::FETCH_ASSOC);
+            $analyticsCourseYearViolations = $pdo->query($courseYearSql)->fetchAll(\PDO::FETCH_ASSOC);
+            $analyticsCourseYearHighlights['most'] = $analyticsCourseYearViolations[0] ?? null;
+            $analyticsCourseYearHighlights['least'] = !empty($analyticsCourseYearViolations)
+                ? $analyticsCourseYearViolations[count($analyticsCourseYearViolations) - 1]
+                : null;
 
             $rankingSql = "
                 SELECT u.name AS full_name, u.student_id, COALESCE(NULLIF(TRIM(u.course), ''), 'Unassigned') AS course,
-                       'N/A' AS year_level,
-                       COUNT(v.id) AS violation_count, u.id AS user_id
-                FROM violations v
-                INNER JOIN users u ON v.user_id = u.id
-                WHERE v.scanned_at >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
-                  AND ' . $archivedExprU . ' = 0
-                GROUP BY u.id, u.name, u.student_id, u.course
+                       COALESCE(NULLIF(TRIM(u.year_level), ''), 'Unassigned') AS year_level,
+                       COUNT(sv.id) AS violation_count, u.id AS user_id
+                FROM student_violations sv
+                INNER JOIN users u ON sv.user_id = u.id
+                WHERE sv.created_at >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+                  AND u.role = 'Student'
+                  AND u.deleted_at IS NULL
+                  AND {$archivedExprU} = 0
+                GROUP BY u.id, u.name, u.student_id, u.course, u.year_level
                 ORDER BY violation_count DESC, u.name ASC
                 LIMIT 50
             ";
@@ -562,6 +581,32 @@ $activeSection = $_GET['section'] ?? 'students';
             -webkit-backdrop-filter: blur(18px);
             border: 1px solid rgba(255, 255, 255, 0.55);
             box-shadow: 0 20px 60px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(255,255,255,0.18);
+            scrollbar-width: thin;
+            scrollbar-color: rgba(14, 165, 233, 0.82) rgba(255, 255, 255, 0.18);
+            scrollbar-gutter: stable;
+        }
+
+        #sidebar::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        #sidebar::-webkit-scrollbar-track {
+            background: linear-gradient(180deg, rgba(255,255,255,0.22), rgba(255,255,255,0.08));
+            border-left: 1px solid rgba(255,255,255,0.18);
+            border-radius: 999px;
+            margin: 10px 0;
+        }
+
+        #sidebar::-webkit-scrollbar-thumb {
+            background: linear-gradient(180deg, rgba(56, 189, 248, 0.95), rgba(14, 165, 233, 0.62));
+            border: 2px solid rgba(255,255,255,0.72);
+            border-radius: 999px;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.35);
+            min-height: 48px;
+        }
+
+        #sidebar::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(180deg, rgba(34, 211, 238, 0.98), rgba(14, 165, 233, 0.78));
         }
 
         .sidebar-calendar-card {
@@ -1008,15 +1053,6 @@ $activeSection = $_GET['section'] ?? 'students';
                         <?php endif; ?>
                     </div>
                 </a>
-
-                <?php if ($isSuperadminSession): ?>
-                <a href="?section=audit" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-colors <?php echo $activeSection === 'audit' ? 'bg-sky-100/70 text-sky-700 font-semibold' : 'text-slate-600 hover:bg-white/60'; ?>">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                    </svg>
-                    <span class="font-medium">Audit Log</span>
-                </a>
-                <?php endif; ?>
 
                 <a href="?section=rfid_checker" class="flex items-center gap-3 px-4 py-3 rounded-xl transition-colors <?php echo $activeSection === 'rfid_checker' ? 'bg-sky-100/70 text-sky-700 font-semibold' : 'text-slate-600 hover:bg-white/60'; ?>">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1713,10 +1749,16 @@ $activeSection = $_GET['section'] ?? 'students';
                 <p class="text-slate-500 mt-1 text-sm">Real-time overview of admin activity &amp; gate violations</p>
             </div>
             <div class="flex items-center gap-2 flex-wrap justify-end">
-                <!-- [AGENT CHANGE — TASK 5] -->
-                <input type="date" id="analyticsDateFrom" class="text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Analytics date from">
-                <input type="date" id="analyticsDateTo" class="text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" aria-label="Analytics date to">
-                <!-- [END TASK 5] -->
+                <div id="analyticsCourseYearHighlights" class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                    <div class="rounded-xl border border-red-200 bg-red-50/80 px-3 py-2">
+                        <p class="text-[11px] font-semibold uppercase tracking-wide text-red-700">Most Violators</p>
+                        <p class="text-sm font-semibold text-red-900" id="mostViolatorCourseYear">--</p>
+                    </div>
+                    <div class="rounded-xl border border-emerald-200 bg-emerald-50/80 px-3 py-2">
+                        <p class="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Least Violators</p>
+                        <p class="text-sm font-semibold text-emerald-900" id="leastViolatorCourseYear">--</p>
+                    </div>
+                </div>
                 <select id="analyticsPeriod" class="text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer" style="padding-right:2.2rem;background-image:url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 fill=%22none%22 viewBox=%220 0 24 24%22 stroke=%22%2394a3b8%22 stroke-width=%222%22%3E%3Cpath stroke-linecap=%22round%22 stroke-linejoin=%22round%22 d=%22M19 9l-7 7-7-7%22/%3E%3C/svg%3E');background-repeat:no-repeat;background-position:right 0.6rem center;background-size:1rem;appearance:none;-webkit-appearance:none;">
                     <option value="today">Today</option>
                     <option value="week">This Week</option>
@@ -1799,10 +1841,10 @@ $activeSection = $_GET['section'] ?? 'students';
         <!-- [AGENT CHANGE — TASK 5] -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
             <div class="glass-card rounded-2xl p-6">
-                <h2 class="text-base font-semibold text-slate-800 mb-1">Violations by Course</h2>
-                <p class="text-xs text-slate-400 mb-4">Filtered by selected date range / period</p>
+                <h2 class="text-base font-semibold text-slate-800 mb-1">Violations by Course &amp; Year</h2>
+                <p class="text-xs text-slate-400 mb-4">Current selected analytics period</p>
                 <div style="position:relative;height:260px;">
-                    <canvas id="chartViolationsByCourse"></canvas>
+                    <canvas id="chartViolationsByCourseYear"></canvas>
                 </div>
             </div>
             <div class="glass-card rounded-2xl p-6">
@@ -1834,7 +1876,8 @@ $activeSection = $_GET['section'] ?? 'students';
             'timeline' => $analyticsTimeline,
             'violationTrend' => $analyticsViolationTrend,
             'stats' => $analyticsStats,
-            'courseViolations' => $analyticsCourseViolations,
+            'courseYearViolations' => $analyticsCourseYearViolations,
+            'courseYearHighlights' => $analyticsCourseYearHighlights,
             'studentRanking' => $analyticsStudentRanking
         ]), ENT_QUOTES); ?>">
         <script>
@@ -1842,8 +1885,6 @@ $activeSection = $_GET['section'] ?? 'students';
             const _csrf = document.body?.dataset?.csrfToken || '';
 
             const initData = JSON.parse(document.getElementById('analyticsInitData')?.value || '{}');
-            const dateFromInput = document.getElementById('analyticsDateFrom');
-            const dateToInput = document.getElementById('analyticsDateTo');
 
             const ACTION_LABELS = {
                 APPROVE_STUDENT:        'Approve Student',
@@ -2001,12 +2042,12 @@ $activeSection = $_GET['section'] ?? 'students';
             });
 
             // [AGENT CHANGE — TASK 5]
-            const courseCtx = document.getElementById('chartViolationsByCourse')?.getContext('2d');
-            const initialCourseRows = Array.isArray(initData.courseViolations) ? initData.courseViolations : [];
+            const courseCtx = document.getElementById('chartViolationsByCourseYear')?.getContext('2d');
+            const initialCourseRows = Array.isArray(initData.courseYearViolations) ? initData.courseYearViolations : [];
             const chartCourse = courseCtx ? new Chart(courseCtx, {
                 type: 'bar',
                 data: {
-                    labels: initialCourseRows.map(r => String(r.course || 'Unassigned')),
+                    labels: initialCourseRows.map(r => String((r.course || 'Unassigned') + ' • ' + (r.year_level || 'Unassigned'))),
                     datasets: [{
                         data: initialCourseRows.map(r => Number(r.violation_count || 0)),
                         backgroundColor: 'rgba(59,130,246,0.82)',
@@ -2023,6 +2064,25 @@ $activeSection = $_GET['section'] ?? 'students';
                     }
                 }
             }) : null;
+
+            const formatCourseYearRow = (row) => {
+                if (!row || typeof row !== 'object') {
+                    return '--';
+                }
+                const course = String(row.course || 'Unassigned');
+                const yearLevel = String(row.year_level || 'Unassigned');
+                const count = Number(row.violation_count || 0);
+                return `${course} • ${yearLevel} (${count})`;
+            };
+
+            const renderCourseYearHighlights = (highlights) => {
+                const most = document.getElementById('mostViolatorCourseYear');
+                const least = document.getElementById('leastViolatorCourseYear');
+                if (most) most.textContent = formatCourseYearRow(highlights?.most || null);
+                if (least) least.textContent = formatCourseYearRow(highlights?.least || null);
+            };
+
+            renderCourseYearHighlights(initData.courseYearHighlights || {});
 
             let rankingExpanded = false;
             const rankingBody = document.getElementById('studentRankingBody');
@@ -2091,8 +2151,6 @@ $activeSection = $_GET['section'] ?? 'students';
                 period = period || currentPeriod;
                 try {
                     const params = new URLSearchParams({ period: period });
-                    if (dateFromInput?.value) params.set('date_from', dateFromInput.value);
-                    if (dateToInput?.value) params.set('date_to', dateToInput.value);
                     const r = await fetch('analytics_data.php?' + params.toString(), { headers: { 'X-CSRF-Token': _csrf } });
                     if (!r.ok) return;
                     const d = await r.json();
@@ -2118,11 +2176,12 @@ $activeSection = $_GET['section'] ?? 'students';
 
                     // [AGENT CHANGE — TASK 5]
                     if (chartCourse) {
-                        const rows = Array.isArray(d.courseViolations) ? d.courseViolations : [];
-                        chartCourse.data.labels = rows.map(row => String(row.course || 'Unassigned'));
+                        const rows = Array.isArray(d.courseYearViolations) ? d.courseYearViolations : [];
+                        chartCourse.data.labels = rows.map(row => String((row.course || 'Unassigned') + ' • ' + (row.year_level || 'Unassigned')));
                         chartCourse.data.datasets[0].data = rows.map(row => Number(row.violation_count || 0));
                         chartCourse.update('none');
                     }
+                    renderCourseYearHighlights(d.courseYearHighlights || {});
                     window.__analyticsStudentRankingRows = Array.isArray(d.studentRanking) ? d.studentRanking : [];
                     renderStudentRanking(window.__analyticsStudentRankingRows);
                     // [END TASK 5]
@@ -2134,8 +2193,6 @@ $activeSection = $_GET['section'] ?? 'students';
                 updateSubtitles(this.value);
                 refreshAnalytics(this.value);
             });
-            if (dateFromInput) dateFromInput.addEventListener('change', () => refreshAnalytics(currentPeriod));
-            if (dateToInput) dateToInput.addEventListener('change', () => refreshAnalytics(currentPeriod));
 
             updateSubtitles('month');
             setInterval(() => refreshAnalytics(currentPeriod), 30000);
@@ -5554,6 +5611,52 @@ async function removeIdCardPhoto() {
     }
 }
 
+let profileFaceModelLoadPromise = null;
+let profileFaceModelsReady = false;
+
+async function ensureProfileFaceModelsLoaded() {
+    if (profileFaceModelsReady) return;
+    if (typeof faceapi === 'undefined') {
+        throw new Error('Face recognition library is not available.');
+    }
+    if (!profileFaceModelLoadPromise) {
+        profileFaceModelLoadPromise = Promise.all([
+            faceapi.nets.ssdMobilenetv1.loadFromUri('../assets/models'),
+            faceapi.nets.faceLandmark68Net.loadFromUri('../assets/models'),
+            faceapi.nets.faceRecognitionNet.loadFromUri('../assets/models'),
+        ]);
+    }
+    await profileFaceModelLoadPromise;
+    profileFaceModelsReady = true;
+}
+
+async function extractProfileFaceDescriptor(file) {
+    await ensureProfileFaceModelsLoaded();
+    const image = await faceapi.bufferToImage(file);
+    const options = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.55, maxResults: 2 });
+    const detections = await faceapi
+        .detectAllFaces(image, options)
+        .withFaceLandmarks()
+        .withFaceDescriptors();
+
+    if (!Array.isArray(detections) || detections.length === 0) {
+        throw new Error('No face detected in the uploaded profile picture. Use a clear front-facing photo.');
+    }
+    if (detections.length > 1) {
+        throw new Error('Multiple faces detected in the profile picture. Please upload a photo with only the student face.');
+    }
+
+    const descriptor = Array.from(detections[0].descriptor || []);
+    if (descriptor.length !== 128) {
+        throw new Error('Invalid face descriptor extracted from profile picture.');
+    }
+
+    return {
+        descriptor: descriptor,
+        detection_score: Number(detections[0]?.detection?.score || 0),
+    };
+}
+
 async function saveStudentInfo() {
     var userId = document.getElementById('editStudentUserId').value;
     var name = document.getElementById('editStudentName').value.trim();
@@ -5596,9 +5699,12 @@ async function saveStudentInfo() {
     try {
         // 1. Upload photo first if there's a pending one
         if (window.digitalIdPreview && window.digitalIdPreview.hasPendingPhoto()) {
+            const pendingPhotoFile = window.digitalIdPreview.getPendingPhotoFile();
+            const profileFacePayload = await extractProfileFaceDescriptor(pendingPhotoFile);
+
             var formData = new FormData();
             formData.append('student_id', userId);
-            formData.append('file', window.digitalIdPreview.getPendingPhotoFile());
+            formData.append('file', pendingPhotoFile);
             
             var photoResp = await fetch('upload_student_picture.php', {
                 method: 'POST',
@@ -5610,6 +5716,30 @@ async function saveStudentInfo() {
                 showToast('Photo upload failed: ' + (photoData.error || 'Unknown error'), 'error', 4200, {
                     title: 'Photo Upload Failed',
                     tag: 'Upload'
+                });
+                return;
+            }
+
+            const descriptorResp = await fetch('save_profile_face_descriptor.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                body: JSON.stringify({
+                    student_id: Number(userId),
+                    descriptor: profileFacePayload.descriptor,
+                    detection_score: profileFacePayload.detection_score,
+                    source_picture: photoData.filename || ''
+                })
+            });
+            const descriptorData = await descriptorResp.json();
+            if (!descriptorResp.ok || !descriptorData.success) {
+                await fetch('delete_student_picture.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+                    body: JSON.stringify({ user_id: Number(userId) })
+                }).catch(() => {});
+                showToast('Profile face validation failed: ' + (descriptorData.error || 'Unable to process face descriptor'), 'error', 5200, {
+                    title: 'Profile Face Not Saved',
+                    tag: 'Face Integrity'
                 });
                 return;
             }
@@ -5654,7 +5784,10 @@ async function saveStudentInfo() {
         }
     } catch (error) {
         console.error('Error:', error);
-        showToast('Failed to update student information. Please try again.', 'error', 4200, {
+        const errMsg = (error && typeof error.message === 'string' && error.message.trim() !== '')
+            ? error.message.trim()
+            : 'Failed to update student information. Please try again.';
+        showToast(errMsg, 'error', 4600, {
             title: 'Request Failed',
             tag: 'Network'
         });

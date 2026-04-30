@@ -19,7 +19,7 @@ $faceEnabled = filter_var(env('FACE_RECOGNITION_ENABLED', 'false'), FILTER_VALID
 $token = trim((string)($_GET['token'] ?? ''));
 
 if ($token === '' || strlen($token) < 20) {
-    $_SESSION['error'] = 'Invalid registration token.';
+    $_SESSION['superadmin_error'] = 'Invalid registration token.';
     header('Location: homepage.php');
     exit;
 }
@@ -34,13 +34,13 @@ try {
     $reg = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$reg) {
-        $_SESSION['error'] = 'Registration token expired or invalid.';
+        $_SESSION['superadmin_error'] = 'Registration token expired or invalid.';
         header('Location: homepage.php');
         exit;
     }
 
     if ((int)$reg['created_by_superadmin_id'] !== (int)($_SESSION['superadmin_id'] ?? 0)) {
-        $_SESSION['error'] = 'Forbidden.';
+        $_SESSION['superadmin_error'] = 'Forbidden.';
         header('Location: homepage.php');
         exit;
     }
@@ -52,7 +52,7 @@ try {
 } catch (Throwable $e) {
     error_log('Enroll admin registration face page error: ' . $e->getMessage());
     $debugEnabled = filter_var(env('APP_DEBUG', 'false'), FILTER_VALIDATE_BOOLEAN);
-    $_SESSION['error'] = $debugEnabled
+    $_SESSION['superadmin_error'] = $debugEnabled
         ? ('Unable to load enrollment page: ' . $e->getMessage())
         : 'Unable to load enrollment page.';
     header('Location: homepage.php');

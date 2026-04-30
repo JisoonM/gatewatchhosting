@@ -36,27 +36,18 @@ if (empty($csrfHeader) || !hash_equals($_SESSION['csrf_token'] ?? '', $csrfHeade
 $allowed = ['today', 'week', 'month', 'year'];
 $period  = in_array($_GET['period'] ?? '', $allowed) ? $_GET['period'] : 'month';
 
-// [AGENT CHANGE — TASK 5]
-$dateFromRaw = trim((string)($_GET['date_from'] ?? ''));
-$dateToRaw = trim((string)($_GET['date_to'] ?? ''));
-$dateFrom = null;
-$dateTo = null;
-if ($dateFromRaw !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateFromRaw)) {
-    $dateFrom = $dateFromRaw;
-}
-if ($dateToRaw !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateToRaw)) {
-    $dateTo = $dateToRaw;
-}
-if ($dateFrom !== null && $dateTo !== null && strtotime($dateFrom) > strtotime($dateTo)) {
-    [$dateFrom, $dateTo] = [$dateTo, $dateFrom];
-}
-// [END TASK 5]
-
 try {
     $pdo = pdo();
     // [AGENT CHANGE — TASK 5]
     $hasArchivedColumn = db_column_exists('users', 'is_archived');
     $archivedExprU = $hasArchivedColumn ? 'COALESCE(u.is_archived, 0)' : '0';
+    if (!db_column_exists('users', 'year_level')) {
+        try {
+            $pdo->exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS year_level VARCHAR(20) NULL AFTER course");
+        } catch (\PDOException $e) {
+            error_log('analytics_data ensure year_level warning: ' . $e->getMessage());
+        }
+    }
     // [END TASK 5]
 
     // Date conditions per period
@@ -102,25 +93,6 @@ try {
             $scanCondParams[] = $year; $scanCondParams[] = $month;
             break;
     }
-
-    // [AGENT CHANGE — TASK 5]
-    if ($dateFrom !== null) {
-        $auditCond .= " AND DATE(created_at) >= ?";
-        $svCond .= " AND DATE(created_at) >= ?";
-        $scanCond .= " AND DATE(scanned_at) >= ?";
-        $auditCondParams[] = $dateFrom;
-        $svCondParams[] = $dateFrom;
-        $scanCondParams[] = $dateFrom;
-    }
-    if ($dateTo !== null) {
-        $auditCond .= " AND DATE(created_at) <= ?";
-        $svCond .= " AND DATE(created_at) <= ?";
-        $scanCond .= " AND DATE(scanned_at) <= ?";
-        $auditCondParams[] = $dateTo;
-        $svCondParams[] = $dateTo;
-        $scanCondParams[] = $dateTo;
-    }
-    // [END TASK 5]
 
     // ── Action type counts (last 30 days) ─────────────────────────────────
     $actionCounts = [];
@@ -267,30 +239,46 @@ try {
     $totalPending    = (int)$pdo->query("SELECT COALESCE(SUM(active_violations_count), 0) FROM users WHERE role = 'Student'")->fetchColumn();
 
     // [AGENT CHANGE — TASK 5]
-    $courseQuery = "
-        SELECT COALESCE(NULLIF(TRIM(u.course), ''), 'Unassigned') AS course, COUNT(v.id) AS violation_count
-        FROM violations v
-        INNER JOIN users u ON v.user_id = u.id
-        WHERE {$scanCond} AND {$archivedExprU} = 0
-        GROUP BY COALESCE(NULLIF(TRIM(u.course), ''), 'Unassigned')
-        ORDER BY violation_count DESC, course ASC
+    $courseYearQuery = "
+        SELECT
+            COALESCE(NULLIF(TRIM(u.course), ''), 'Unassigned') AS course,
+            COALESCE(NULLIF(TRIM(u.year_level), ''), 'Unassigned') AS year_level,
+            COUNT(sv.id) AS violation_count
+        FROM student_violations sv
+        INNER JOIN users u ON sv.user_id = u.id
+        WHERE {$svCond}
+          AND u.role = 'Student'
+          AND u.deleted_at IS NULL
+          AND {$archivedExprU} = 0
+        GROUP BY
+            COALESCE(NULLIF(TRIM(u.course), ''), 'Unassigned'),
+            COALESCE(NULLIF(TRIM(u.year_level), ''), 'Unassigned')
+        ORDER BY violation_count DESC, course ASC, year_level ASC
     ";
-    $courseStmt = $pdo->prepare($courseQuery);
-    $courseStmt->execute($scanCondParams);
-    $courseViolations = $courseStmt->fetchAll(\PDO::FETCH_ASSOC);
+    $courseYearStmt = $pdo->prepare($courseYearQuery);
+    $courseYearStmt->execute($svCondParams);
+    $courseYearViolations = $courseYearStmt->fetchAll(\PDO::FETCH_ASSOC);
+    $mostCourseYear = $courseYearViolations[0] ?? null;
+    $leastCourseYear = !empty($courseYearViolations)
+        ? $courseYearViolations[count($courseYearViolations) - 1]
+        : null;
 
     $rankingQuery = "
         SELECT u.id AS user_id, u.name AS full_name, u.student_id, COALESCE(NULLIF(TRIM(u.course), ''), 'Unassigned') AS course,
-               'N/A' AS year_level, COUNT(v.id) AS violation_count
-        FROM violations v
-        INNER JOIN users u ON v.user_id = u.id
-        WHERE {$scanCond} AND {$archivedExprU} = 0
-        GROUP BY u.id, u.name, u.student_id, u.course
+               COALESCE(NULLIF(TRIM(u.year_level), ''), 'Unassigned') AS year_level,
+               COUNT(sv.id) AS violation_count
+        FROM student_violations sv
+        INNER JOIN users u ON sv.user_id = u.id
+        WHERE {$svCond}
+          AND u.role = 'Student'
+          AND u.deleted_at IS NULL
+          AND {$archivedExprU} = 0
+        GROUP BY u.id, u.name, u.student_id, u.course, u.year_level
         ORDER BY violation_count DESC, u.name ASC
         LIMIT 500
     ";
     $rankingStmt = $pdo->prepare($rankingQuery);
-    $rankingStmt->execute($scanCondParams);
+    $rankingStmt->execute($svCondParams);
     $studentRanking = $rankingStmt->fetchAll(\PDO::FETCH_ASSOC);
     // [END TASK 5]
 
@@ -300,7 +288,11 @@ try {
         'actionCounts'   => (object)$actionCounts,
         'timeline'       => ['labels' => $timelineLabels, 'counts' => $timelineCounts],
         'violationTrend' => ['labels' => $timelineLabels, 'counts' => $violCounts],
-        'courseViolations' => $courseViolations,
+        'courseYearViolations' => $courseYearViolations,
+        'courseYearHighlights' => [
+            'most' => $mostCourseYear,
+            'least' => $leastCourseYear,
+        ],
         'studentRanking' => $studentRanking,
         'stats'          => [
             'actionsToday'    => $actionsCount,

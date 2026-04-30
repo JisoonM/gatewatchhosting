@@ -179,10 +179,10 @@ try {
 }
 
 $_SESSION['google_terms_old']['computed_age'] = (string)$age;
-$parentalConsentRequired = $age <= 18;
+$parentalConsentRequired = $age <= 17;
 
 if ($parentalConsentRequired && ($guardianFullName === '' || $guardianEmail === '' || $guardianContact === '')) {
-  $_SESSION['google_terms_error'] = 'Parent/Guardian full name, email, and contact number are required for students aged 18 or below.';
+  $_SESSION['google_terms_error'] = 'Parent/Guardian full name, email, and contact number are required for students aged 17 or below.';
   header('Location: login.php');
   exit;
 }
