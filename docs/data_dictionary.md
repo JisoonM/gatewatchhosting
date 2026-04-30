@@ -73,6 +73,143 @@ Central hub table for all system users (students and admins).
 
 **Indexes**: student_id (UK), email (UK), rfid_uid (UK), google_id (UK), role, status, rfid_lookup composite, violations composite, face_lookup composite, gate_mark, deleted_at, role+status, role+status+deleted_at
 
+---
+
+## User Type Data Dictionary
+
+### Table 1: Student User
+
+| Entity Name | Attribute | Data Types | Description | Constraints | Example |
+|---|---|---|---|---|---|
+| Student | user_id | INT | Unique user identifier | Primary key, Auto-generate | 2 |
+| | name | VARCHAR(100) | Full name of student | NOT NULL | Mark Jason Briones Ramoss |
+| | student_id | VARCHAR(20) | University student ID | Unique, NOT NULL | 202232903 |
+| | email | VARCHAR(100) | Email address | Unique, NOT NULL, UK | mrk.jason118@gmail.com |
+| | course | VARCHAR(255) | Degree program | Nullable | BS Information Technology |
+| | password | VARCHAR(255) | Bcrypt hashed password | NOT NULL | $2y$10$FNjaXw2zWHfT... |
+| | role | ENUM | User role designation | NOT NULL, Default: 'Student' | Student |
+| | status | ENUM | Account status | NOT NULL, Default: 'Pending' | Pending \| Active \| Locked |
+| | google_id | VARCHAR(255) | Google OAuth identifier | Unique, Nullable | 117931670655597175684 |
+| | rfid_uid | VARCHAR(50) | RFID card UID | Unique, Nullable, UK | 0014973874 |
+| | profile_picture | VARCHAR(255) | Profile picture filename | Nullable | 573a472de056478a7fd5e57d2c593268.jpg |
+| | violation_count | INT | Total violations accumulated | NOT NULL, Default: 0, ≥0 | 9 |
+| | active_violations_count | INT | Currently active violations | NOT NULL, Default: 0, ≥0 | 0 |
+| | face_registered | TINYINT(1) | Face biometric enrolled | NOT NULL, Default: 0 | 1 |
+| | last_login | DATETIME | Last successful login timestamp | Nullable | 2026-04-06 20:42:59 |
+| | created_at | TIMESTAMP | Account registration timestamp | NOT NULL, Auto-generated | 2026-02-04 11:27:36 |
+| | updated_at | TIMESTAMP | Last record modification | NOT NULL, Auto-updated | 2026-04-06 12:42:59 |
+
+**Primary Key**: user_id
+
+**Unique Keys**: student_id, email, rfid_uid, google_id
+
+**Foreign Keys**: None (student role specific)
+
+**Indexes**: idx_student_id, idx_email, idx_role, idx_status, idx_users_violations
+
+---
+
+### Table 2: Admin User
+
+| Entity Name | Attribute | Data Types | Description | Constraints | Example |
+|---|---|---|---|---|---|
+| Admin | user_id | INT | Unique administrator identifier | Primary key, Auto-generate | 3 |
+| | name | VARCHAR(100) | Full name of administrator | NOT NULL | System Administrator |
+| | admin_id | VARCHAR(20) | Admin account identifier | Unique, NOT NULL | ADMIN-001 |
+| | email | VARCHAR(100) | Administrative email address | Unique, NOT NULL, UK | jeysidelima04@gmail.com |
+| | password | VARCHAR(255) | Bcrypt/Argon2 hashed password | NOT NULL | $argon2id$v=19$m=65536... |
+| | role | ENUM | User role designation | NOT NULL, Fixed: 'Admin' | Admin |
+| | status | ENUM | Account status | NOT NULL, Default: 'Active' | Active \| Locked |
+| | access_level | INT | Permission tier (1-5) | Nullable, Default: NULL | 3 |
+| | last_login | DATETIME | Last successful login timestamp | Nullable | 2026-03-17 13:20:52 |
+| | failed_attempts | INT | Consecutive failed login attempts | NOT NULL, Default: 0, ≥0 | 0 |
+| | locked_until | DATETIME | Account lockout expiry time | Nullable | NULL |
+| | created_at | TIMESTAMP | Account creation timestamp | NOT NULL, Auto-generated | 2026-02-04 11:44:42 |
+| | updated_at | TIMESTAMP | Last record modification | NOT NULL, Auto-updated | 2026-03-17 13:20:52 |
+| | deleted_at | DATETIME | Soft delete timestamp (NULL = active) | Nullable | NULL |
+
+**Primary Key**: user_id
+
+**Unique Keys**: admin_id, email
+
+**Foreign Keys**: None at user level (references enforced at audit_logs level)
+
+**Indexes**: idx_role, idx_status, idx_email, idx_admin_created
+
+**Constraints**: Cannot be deleted while audit_logs records exist (ON DELETE RESTRICT)
+
+---
+
+### Table 3: Security User
+
+| Entity Name | Attribute | Data Types | Description | Constraints | Example |
+|---|---|---|---|---|---|
+| Security | user_id | INT | Unique security personnel identifier | Primary key, Auto-generate | 4 |
+| | name | VARCHAR(100) | Full name of security guard | NOT NULL | Juan Dela Cruz |
+| | security_id | VARCHAR(20) | Security personnel ID | Unique, NOT NULL | SEC-001 |
+| | email | VARCHAR(100) | Security personnel email | Unique, NOT NULL, UK | security.guard@pcu.edu.ph |
+| | password | VARCHAR(255) | Bcrypt hashed password | NOT NULL | $2y$10$FNjaXw2zWHfT... |
+| | role | ENUM | User role designation | NOT NULL, Fixed: 'Security' | Security |
+| | status | ENUM | Account status | NOT NULL, Default: 'Active' | Active \| Locked \| Inactive |
+| | gate_location | VARCHAR(100) | Assigned gate location | Nullable | Gate A - Main Entrance |
+| | shift_assignment | VARCHAR(50) | Work shift designation | Nullable | Morning \| Afternoon \| Night |
+| | failed_attempts | INT | Consecutive failed login attempts | NOT NULL, Default: 0, ≥0 | 0 |
+| | locked_until | DATETIME | Account lockout expiry time | Nullable | NULL |
+| | last_login | DATETIME | Last successful login timestamp | Nullable | 2026-04-05 08:30:15 |
+| | created_at | TIMESTAMP | Account creation timestamp | NOT NULL, Auto-generated | 2026-02-10 09:15:00 |
+| | updated_at | TIMESTAMP | Last record modification | NOT NULL, Auto-updated | 2026-04-05 08:30:15 |
+
+**Primary Key**: user_id
+
+**Unique Keys**: security_id, email
+
+**Foreign Keys**: None at user level
+
+**Indexes**: idx_role, idx_status, idx_email, idx_gate_location
+
+**Audit Trail**: All actions logged in audit_logs table with RESTRICT constraint
+
+---
+
+### Table 4: Superadmin User
+
+| Entity Name | Attribute | Data Types | Description | Constraints | Example |
+|---|---|---|---|---|---|
+| Superadmin | user_id | INT | Unique superadministrator identifier | Primary key, Auto-generate | 1 |
+| | name | VARCHAR(100) | Full name of superadministrator | NOT NULL | System Super Admin |
+| | superadmin_id | VARCHAR(20) | Superadmin account identifier | Unique, NOT NULL | SUPER-ADMIN-001 |
+| | email | VARCHAR(100) | Superadmin email address | Unique, NOT NULL, UK | admin@pcu.edu.ph |
+| | password | VARCHAR(255) | Argon2 hashed password (strongest) | NOT NULL | $argon2id$v=19$m=65536... |
+| | role | ENUM | User role designation | NOT NULL, Fixed: 'Superadmin' | Superadmin |
+| | status | ENUM | Account status | NOT NULL, Default: 'Active' | Active \| Locked |
+| | system_access_level | INT | Full system permission tier | NOT NULL, Fixed: 5 | 5 |
+| | can_manage_admins | TINYINT(1) | Permission to create/modify admins | NOT NULL, Default: 1 | 1 |
+| | can_manage_security | TINYINT(1) | Permission to manage security staff | NOT NULL, Default: 1 | 1 |
+| | can_modify_settings | TINYINT(1) | Permission to modify system settings | NOT NULL, Default: 1 | 1 |
+| | can_view_audit_logs | TINYINT(1) | Permission to view all audit logs | NOT NULL, Default: 1 | 1 |
+| | failed_attempts | INT | Consecutive failed login attempts | NOT NULL, Default: 0, ≥0 | 0 |
+| | locked_until | DATETIME | Account lockout expiry time | Nullable | NULL |
+| | last_login | DATETIME | Last successful login timestamp | Nullable | 2026-04-06 15:22:30 |
+| | created_at | TIMESTAMP | Account creation timestamp | NOT NULL, Auto-generated | 2026-02-04 10:52:03 |
+| | updated_at | TIMESTAMP | Last record modification | NOT NULL, Auto-updated | 2026-02-04 10:52:03 |
+| | deleted_at | DATETIME | Soft delete timestamp (NULL = active) | Nullable | NULL |
+
+**Primary Key**: user_id
+
+**Unique Keys**: superadmin_id, email
+
+**Foreign Keys**: None at user level
+
+**Indexes**: idx_role, idx_status, idx_email, idx_system_access_level
+
+**Special Constraints**: 
+- System must always have at least one active Superadmin
+- Cannot be deleted while managing critical system functions
+- All actions logged with full audit trail (RESTRICT)
+- Requires multi-factor authentication (recommended)
+
+---
+
 ### `auth_providers`
 Available authentication providers (Google, manual, etc.).
 

@@ -36,45 +36,31 @@ function fetch_active_qr_challenge_id(PDO $pdo): ?string {
     return null;
 }
 
-// [AGENT CHANGE — TASK 1]
 function ensure_qr_identity_token(PDO $pdo, int $userId): ?string {
-    try {
-        $colStmt = $pdo->query("SHOW COLUMNS FROM users LIKE 'qr_identity_token'");
-        if (!$colStmt->fetch()) {
-            return null;
-        }
+    if (!db_column_exists('users', 'qr_identity_token')) {
+        return null;
+    }
 
+    try {
         $stmt = $pdo->prepare('SELECT qr_identity_token FROM users WHERE id = ? LIMIT 1');
         $stmt->execute([$userId]);
-        $current = (string)($stmt->fetchColumn() ?? '');
+        $current = trim((string)($stmt->fetchColumn() ?? ''));
         if ($current !== '') {
             return $current;
         }
 
-        $token = function_exists('uuid_create')
-            ? uuid_create(UUID_TYPE_RANDOM)
-            : sprintf(
-                '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
-                random_int(0, 0xffff), random_int(0, 0xffff),
-                random_int(0, 0xffff),
-                random_int(0, 0x0fff) | 0x4000,
-                random_int(0, 0x3fff) | 0x8000,
-                random_int(0, 0xffff), random_int(0, 0xffff), random_int(0, 0xffff)
-            );
+        $token = bin2hex(random_bytes(16));
+        $update = $pdo->prepare('UPDATE users SET qr_identity_token = ? WHERE id = ? AND (qr_identity_token IS NULL OR qr_identity_token = "")');
+        $update->execute([$token, $userId]);
 
-        $upd = $pdo->prepare('UPDATE users SET qr_identity_token = ? WHERE id = ? AND (qr_identity_token IS NULL OR qr_identity_token = "")');
-        $upd->execute([$token, $userId]);
-
-        $stmt = $pdo->prepare('SELECT qr_identity_token FROM users WHERE id = ? LIMIT 1');
         $stmt->execute([$userId]);
-        $finalToken = (string)($stmt->fetchColumn() ?? '');
-        return $finalToken !== '' ? $finalToken : $token;
+        $saved = trim((string)($stmt->fetchColumn() ?? ''));
+        return $saved !== '' ? $saved : $token;
     } catch (\Throwable $e) {
-        error_log('ensure_qr_identity_token error: ' . $e->getMessage());
+        error_log('Digital ID identity token error: ' . $e->getMessage());
         return null;
     }
 }
-// [END TASK 1]
 
 // Get user information from database
 try {
@@ -96,23 +82,22 @@ try {
     $now = time();
     $issuer = (string) env('QR_TOKEN_ISSUER', env('APP_URL', 'gatewatch-local'));
     $audience = (string) env('QR_TOKEN_AUDIENCE', 'gatewatch-security');
-    // [AGENT CHANGE — TASK 1]
-    $qrIdentityToken = ensure_qr_identity_token($pdo, (int)$user['id']);
+    $identityToken = ensure_qr_identity_token($pdo, (int)$user['id']);
     $payload = [
         // Keep payload compact so QR density remains readable on student phones.
         'iss' => $issuer,
         'aud' => $audience,
         'purpose' => 'student_digital_id_qr',
-        'identity_token' => $qrIdentityToken ?: null,
-        'issued_at' => $now,
-        'expires_at' => $now + 300
+        'iat' => $now,
+        'exp' => $now + 300
     ];
-    if (($payload['identity_token'] ?? null) === null) {
-        // Backward-safe fallback for deployments without qr_identity_token column.
+    if ($identityToken !== null && $identityToken !== '') {
+        $payload['identity_token'] = $identityToken;
+    } else {
+        // Fallback for deployments without qr_identity_token support.
         $payload['student_id'] = $user['student_id'];
         $payload['email'] = $user['email'];
     }
-    // [END TASK 1]
 
     $activeChallengeId = fetch_active_qr_challenge_id($pdo);
     if ($activeChallengeId !== null) {
@@ -533,7 +518,7 @@ try {
         
         .qr-wrapper {
             background: white;
-            padding: 16px;
+            padding: 14px;
             border-radius: 16px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.08);
             border: 1px solid #e2e8f0;
@@ -545,6 +530,9 @@ try {
         
         #qrcode {
             display: block;
+            image-rendering: pixelated;
+            width: 192px;
+            height: 192px;
         }
 
         .qr-center-logo {
@@ -552,8 +540,8 @@ try {
             left: 50%;
             top: 50%;
             transform: translate(-50%, -50%);
-            width: 34px;
-            height: 34px;
+            width: 18px;
+            height: 18px;
             border-radius: 50%;
             background: #ffffff;
             border: 2px solid #e2e8f0;
@@ -758,24 +746,46 @@ try {
         
     </div>
 
-    <script src="assets/js/qrious.min.js"></script>
+    <script src="assets/js/qrcode-generator-2.0.4.min.js"></script>
     <script>
         const qrCanvas = document.getElementById('qrcode');
-        // [AGENT CHANGE — TASK 1]
-        const qrSize = 200;
+        const qrTargetSize = 192;
+        const qrMinModulePixels = 2;
         const qrValue = <?php echo json_encode($jwt_token); ?>;
+        const qrLogo = document.querySelector('.qr-center-logo');
         function renderReliableQRCode() {
-            return new QRious({
-                element: qrCanvas,
-                value: qrValue,
-                size: qrSize,
-                level: 'M',
-                padding: 1,
-                background: '#ffffff',
-                foreground: '#000000'
-            });
+            const quietZoneModules = 4;
+            const qr = qrcode(0, 'Q');
+            qr.addData(qrValue, 'Byte');
+            qr.make();
+
+            const moduleCount = qr.getModuleCount();
+            const modulePixelSize = Math.max(qrMinModulePixels, Math.floor(qrTargetSize / (moduleCount + (quietZoneModules * 2))));
+            const quietZonePx = quietZoneModules * modulePixelSize;
+            const totalSize = (moduleCount * modulePixelSize) + (quietZonePx * 2);
+            const qrSize = Math.max(qrTargetSize, totalSize);
+            const drawOffset = Math.floor((qrSize - totalSize) / 2);
+
+            qrCanvas.width = qrSize;
+            qrCanvas.height = qrSize;
+            qrCanvas.style.width = qrSize + 'px';
+            qrCanvas.style.height = qrSize + 'px';
+
+            const context = qrCanvas.getContext('2d');
+            context.clearRect(0, 0, qrSize, qrSize);
+            context.fillStyle = '#ffffff';
+            context.fillRect(0, 0, qrSize, qrSize);
+
+            context.save();
+            context.translate(drawOffset + quietZonePx, drawOffset + quietZonePx);
+            qr.renderTo2dContext(context, modulePixelSize);
+            context.restore();
+
+            // Keep logo only when modules are large enough for stable camera decoding.
+            if (qrLogo) {
+                qrLogo.style.display = modulePixelSize >= 3 ? 'block' : 'none';
+            }
         }
-        // [END TASK 1]
 
         renderReliableQRCode();
         
